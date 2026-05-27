@@ -36,6 +36,7 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
   const [openSet, setOpenSet] = useState(new Set())
   const [byDate, setByDate] = useState({})
   const [pub, setPub] = useState(null)
+  const [subStatus, setSubStatus] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -112,6 +113,34 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
         .eq('month_start', monthStart)
         .maybeSingle()
       setPub(p || null)
+
+      // Wie moet nog beschikbaarheden doorgeven? (ondernemers van deze winkel)
+      const { data: es } = await supabase
+        .from('entrepreneur_shops')
+        .select('entrepreneur_id, start_date, end_date, employees(first_name, last_name)')
+        .eq('shop_id', shopId)
+      const activeEnt = (es || []).filter(
+        (r) => r.start_date <= monthEnd && (!r.end_date || r.end_date >= monthStart),
+      )
+      const entIds = activeEnt.map((r) => r.entrepreneur_id)
+      const subMap = {}
+      if (entIds.length) {
+        const { data: subs } = await supabase
+          .from('availability_submissions')
+          .select('employee_id, confirmed_at')
+          .in('employee_id', entIds)
+          .eq('month_start', monthStart)
+        ;(subs || []).forEach((s) => (subMap[s.employee_id] = { has: true, confirmed: !!s.confirmed_at }))
+      }
+      const statusList = activeEnt.map((r) => {
+        const info = subMap[r.entrepreneur_id]
+        const naam =
+          [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ') || 'Onbekend'
+        return { name: naam, status: info?.confirmed ? 'bevestigd' : info?.has ? 'bezig' : 'niet' }
+      })
+      const order = { niet: 0, bezig: 1, bevestigd: 2 }
+      statusList.sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name))
+      setSubStatus(statusList)
     } catch (e) {
       setMsg({ kind: 'err', text: 'Laden mislukt. Probeer opnieuw.' })
     } finally {
@@ -168,25 +197,27 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
     }
   }
 
-  async function doConfirmPlan() {
+  async function doPublish() {
     setDialog(null)
     setBusy(true)
     try {
+      const now = new Date().toISOString()
       const { error } = await supabase.from('schedule_publications').upsert(
         {
           shop_id: shopId,
           month_start: monthStart,
-          status: 'confirmed',
+          status: 'published',
           confirmed_by: employee.id,
-          confirmed_at: new Date().toISOString(),
+          confirmed_at: now,
+          published_at: now,
         },
         { onConflict: 'shop_id,month_start' },
       )
       if (error) throw error
-      setMsg({ kind: 'good', text: 'Planning bevestigd. De admin is verwittigd en kan ze publiceren.' })
+      setMsg({ kind: 'good', text: 'Planning gepubliceerd. De ingeplande medewerkers worden verwittigd.' })
       await loadPlanning()
     } catch (e) {
-      setMsg({ kind: 'err', text: 'Bevestigen mislukt.' })
+      setMsg({ kind: 'err', text: 'Publiceren mislukt.' })
     } finally {
       setBusy(false)
     }
@@ -330,6 +361,23 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
 
           <div className="hint">Tik op een ingevulde dag om die toewijzing te verwijderen.</div>
 
+          {subStatus.length > 0 && (
+            <div className="card">
+              <div className="section-title">
+                Beschikbaarheden ondernemers ({subStatus.filter((s) => s.status === 'bevestigd').length}/
+                {subStatus.length} bevestigd)
+              </div>
+              {subStatus.map((s, i) => (
+                <div className="row-item" key={i}>
+                  <span>{s.name}</span>
+                  <span className={'tag ' + s.status}>
+                    {s.status === 'bevestigd' ? 'Bevestigd' : s.status === 'bezig' ? 'Bezig' : 'Niet doorgegeven'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             className="btn btn-primary btn-block"
             style={{ marginTop: 8 }}
@@ -341,13 +389,15 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
           <button
             className="btn btn-block"
             style={{ marginTop: 10 }}
-            onClick={() => setDialog({ kind: 'confirmplan' })}
-            disabled={busy || empty > 0}
-            title={empty > 0 ? 'Er zijn nog lege dagen' : ''}
+            onClick={() => setDialog({ kind: 'publish' })}
+            disabled={busy}
           >
-            Planning bevestigen
+            {pub?.status === 'published' ? 'Update publiceren' : 'Planning publiceren'}
           </button>
-          {empty > 0 && <div className="hint" style={{ textAlign: 'center' }}>Bevestigen kan zodra alle dagen ingevuld zijn.</div>}
+          <div className="hint" style={{ textAlign: 'center' }}>
+            Publiceren mag ook met lege dagen. Vul je ze later in, dan publiceer je gewoon opnieuw — de betrokkenen
+            krijgen dan een update.
+          </div>
 
           {msg && (
             <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>
@@ -357,14 +407,16 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
 
       <ConfirmDialog
         open={dialog !== null}
-        title={dialog?.kind === 'confirmplan' ? 'Planning bevestigen?' : 'Toewijzing verwijderen?'}
+        title={dialog?.kind === 'publish' ? 'Planning publiceren?' : 'Toewijzing verwijderen?'}
         message={
-          dialog?.kind === 'confirmplan'
-            ? 'De planning wordt bevestigd en de admin wordt verwittigd om ze te publiceren. Doorgaan?'
+          dialog?.kind === 'publish'
+            ? empty > 0
+              ? `Er zijn nog ${empty} lege ${empty === 1 ? 'dag' : 'dagen'}. Die blijven open tot je ze invult en opnieuw publiceert. De ingeplande medewerkers worden verwittigd. Toch publiceren?`
+              : 'De planning wordt gepubliceerd en de ingeplande medewerkers worden verwittigd. Doorgaan?'
             : `Wil je ${dialog?.name || 'deze persoon'} weghalen van ${dialog?.date || 'deze dag'}? De dag wordt dan weer leeg.`
         }
-        confirmLabel={dialog?.kind === 'confirmplan' ? 'Ja, bevestigen' : 'Ja, verwijderen'}
-        onConfirm={dialog?.kind === 'confirmplan' ? doConfirmPlan : doRemove}
+        confirmLabel={dialog?.kind === 'publish' ? 'Ja, publiceren' : 'Ja, verwijderen'}
+        onConfirm={dialog?.kind === 'publish' ? doPublish : doRemove}
         onCancel={() => setDialog(null)}
       />
     </Shell>

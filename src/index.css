@@ -189,3 +189,9 @@ button { font-family: inherit; }
 .pubbadge { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 999px; margin-bottom: 14px; }
 .pubbadge.confirmed { background: var(--warn-bg); color: var(--warn); }
 .pubbadge.published { background: var(--avail-bg); color: var(--avail); }
+
+/* Status-labels (beschikbaarheden doorgegeven) */
+.tag { font-size: 11px; padding: 3px 10px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.tag.bevestigd { background: var(--avail-bg); color: var(--avail); }
+.tag.bezig { background: var(--warn-bg); color: var(--warn); }
+.tag.niet { background: var(--danger-bg); color: var(--danger); }
