@@ -40,6 +40,11 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
   const [msg, setMsg] = useState(null)
   const [dialog, setDialog] = useState(null) // null | {kind:'remove',...} | {kind:'publish'}
   const [picker, setPicker] = useState(null) // null | {date, loading, candidates}
+  const [redis, setRedis] = useState(null) // {incoming, outgoing}
+  const [shortOpen, setShortOpen] = useState(false)
+  const [shortList, setShortList] = useState(null) // null | array
+  const [shortLoading, setShortLoading] = useState(false)
+  const [redisDialog, setRedisDialog] = useState(null) // null | {kind:'days',ent,days,loading} | {kind:'pass',ent,reason}
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -146,6 +151,10 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           return a.name.localeCompare(b.name)
         })
       setSubStatus(statusList)
+
+      const { data: rsum } = await supabase.rpc('redistribution_summary', { p_shop: shopId, p_month: monthStart })
+      const rs = Array.isArray(rsum) ? rsum[0] : rsum
+      setRedis(rs ? { incoming: rs.incoming || 0, outgoing: rs.outgoing || 0 } : { incoming: 0, outgoing: 0 })
     } catch (e) {
       setMsg({ kind: 'err', text: 'Laden mislukt. Probeer opnieuw.' })
     } finally {
@@ -156,6 +165,11 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
   useEffect(() => {
     loadPlanning()
   }, [loadPlanning])
+
+  useEffect(() => {
+    setShortOpen(false)
+    setShortList(null)
+  }, [monthStart, shopId])
 
   async function doShuffle() {
     if (!shopId) return
@@ -264,6 +278,76 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       await loadPlanning()
     } catch (e) {
       setMsg({ kind: 'err', text: 'Publiceren mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function loadShortfall() {
+    setShortLoading(true)
+    try {
+      const { data, error } = await supabase.rpc('shortfall_list', { p_shop: shopId, p_month: monthStart })
+      if (error) throw error
+      setShortList(data || [])
+    } catch (e) {
+      setShortList([])
+      setMsg({ kind: 'err', text: 'Lijst laden mislukt.' })
+    } finally {
+      setShortLoading(false)
+    }
+  }
+
+  function toggleShortfall() {
+    const next = !shortOpen
+    setShortOpen(next)
+    if (next && shortList === null) loadShortfall()
+  }
+
+  async function openDays(ent) {
+    setRedisDialog({ kind: 'days', ent, days: [], loading: true })
+    try {
+      const { data, error } = await supabase.rpc('redistribution_days', {
+        p_shop: shopId, p_month: monthStart, p_entrepreneur: ent.entrepreneur_id,
+      })
+      if (error) throw error
+      setRedisDialog({ kind: 'days', ent, days: (data || []).map((r) => r.day), loading: false })
+    } catch (e) {
+      setRedisDialog({ kind: 'days', ent, days: [], loading: false, error: e?.message || String(e) })
+    }
+  }
+
+  async function doAssignRedis(ent, day) {
+    setRedisDialog(null)
+    setBusy(true)
+    try {
+      const { error } = await supabase.rpc('assign_redistributed', {
+        p_shop: shopId, p_day: day, p_entrepreneur: ent.entrepreneur_id,
+      })
+      if (error) throw error
+      await loadPlanning()
+      await loadShortfall()
+      setMsg({ kind: 'good', text: `${ent.first_name} overgenomen op ${day}, gecrediteerd aan ${ent.home_shops || 'thuiswinkel'}.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Overnemen mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doPass() {
+    const d = redisDialog
+    if (!d || d.kind !== 'pass') return
+    setRedisDialog(null)
+    setBusy(true)
+    try {
+      const { error } = await supabase.rpc('pass_redistribution', {
+        p_shop: shopId, p_entrepreneur: d.ent.entrepreneur_id, p_month: monthStart, p_reason: d.reason || '',
+      })
+      if (error) throw error
+      await loadShortfall()
+      setMsg({ kind: 'good', text: `${d.ent.first_name} overgeslagen voor deze maand.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Overslaan mislukt.' })
     } finally {
       setBusy(false)
     }
@@ -408,6 +492,65 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
               )
             })()}
 
+          <div className="card">
+            <div className="section-title">Ondernemers die nog een dag zoeken</div>
+            <div className="hint" style={{ marginTop: 0 }}>
+              Ondernemers uit andere (gepubliceerde) winkels die hun uitbatingsdag daar niet kwijt kunnen. Je kunt ze
+              hier overnemen — de dag telt dan voor hún winkel.
+            </div>
+            {!shortOpen ? (
+              <button className="btn btn-block" onClick={toggleShortfall} disabled={busy}>
+                Lijst tonen
+              </button>
+            ) : shortLoading ? (
+              <div className="muted">Laden…</div>
+            ) : (shortList || []).length === 0 ? (
+              <div className="muted">Niemand zoekt momenteel nog een dag (of de andere winkels zijn nog niet gepubliceerd).</div>
+            ) : (
+              <div>
+                {shortList.map((s) => (
+                  <div key={s.entrepreneur_id} style={redisRow}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>
+                        {s.first_name}
+                        {s.company_name ? <span className="muted" style={{ fontWeight: 400 }}> · {s.company_name}</span> : null}
+                      </div>
+                      <div className="muted" style={{ fontSize: 13 }}>
+                        {s.home_shops || 'andere winkel'} · {s.shortfall} {s.shortfall === 1 ? 'dag' : 'dagen'} tekort
+                        {' · '}
+                        {s.your_match > 0 ? `jij kunt ${s.your_match} ${s.your_match === 1 ? 'dag' : 'dagen'}` : 'geen passende dag bij jou'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button
+                        className="btn btn-primary"
+                        style={{ padding: '7px 12px', fontSize: 14 }}
+                        onClick={() => openDays(s)}
+                        disabled={busy || s.your_match === 0}
+                      >
+                        Inplannen
+                      </button>
+                      <button
+                        className="btn"
+                        style={{ padding: '7px 12px', fontSize: 14 }}
+                        onClick={() => setRedisDialog({ kind: 'pass', ent: s, reason: '' })}
+                        disabled={busy}
+                      >
+                        Overslaan
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {redis && (redis.incoming > 0 || redis.outgoing > 0) && (
+              <div className="hint" style={{ marginBottom: 0, marginTop: 12 }}>
+                Deze maand: {redis.incoming} {redis.incoming === 1 ? 'dag' : 'dagen'} overgenomen van andere winkels ·{' '}
+                {redis.outgoing} van jouw ondernemers {redis.outgoing === 1 ? 'baat' : 'baten'} elders uit.
+              </div>
+            )}
+          </div>
+
           <button
             className="btn btn-primary btn-block"
             style={{ marginTop: 8 }}
@@ -504,6 +647,55 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           </div>
         </div>
       )}
+
+      {redisDialog && (
+        <div style={pickerOverlay} onClick={() => setRedisDialog(null)}>
+          <div style={pickerDialog} onClick={(e) => e.stopPropagation()}>
+            {redisDialog.kind === 'days' ? (
+              <>
+                <h3 style={{ marginBottom: 4 }}>{redisDialog.ent.first_name} inplannen</h3>
+                <p className="muted" style={{ margin: '0 0 14px' }}>Kies een dag in jouw winkel.</p>
+                {redisDialog.loading ? (
+                  <div className="muted">Laden…</div>
+                ) : redisDialog.error ? (
+                  <p style={{ color: 'var(--danger)', fontSize: 14 }}>Kon de dagen niet laden: {redisDialog.error}</p>
+                ) : redisDialog.days.length === 0 ? (
+                  <p className="muted">Geen passende vrije dag gevonden.</p>
+                ) : (
+                  <div>
+                    {redisDialog.days.map((d) => (
+                      <button key={d} style={pickerRow} onClick={() => doAssignRedis(redisDialog.ent, d)}>
+                        <span style={{ fontWeight: 600 }}>{d}</span>
+                        <span className="muted" style={{ fontSize: 13 }}>kiezen</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                  <button className="btn" onClick={() => setRedisDialog(null)}>Sluiten</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ marginBottom: 4 }}>{redisDialog.ent.first_name} overslaan</h3>
+                <p className="muted" style={{ margin: '0 0 12px' }}>
+                  Deze ondernemer verdwijnt uit jouw lijst voor deze maand. Een korte reden helpt zijn winkel verder.
+                </p>
+                <input
+                  className="input fw"
+                  placeholder="Reden (bv. dag komt niet uit, wil hier niet staan…)"
+                  value={redisDialog.reason}
+                  onChange={(e) => setRedisDialog({ ...redisDialog, reason: e.target.value })}
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                  <button className="btn" onClick={() => setRedisDialog(null)}>Annuleren</button>
+                  <button className="btn btn-primary" onClick={doPass} disabled={busy}>Overslaan</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -542,4 +734,11 @@ const pickerRow = {
   fontSize: 15,
   color: 'var(--ink)',
   textAlign: 'left',
+}
+const redisRow = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  padding: '10px 0',
+  borderBottom: '1px solid var(--line)',
 }
