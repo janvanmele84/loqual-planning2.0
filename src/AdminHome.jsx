@@ -5,6 +5,7 @@ import AdminManagers from './AdminManagers.jsx'
 import AdminAccounts from './AdminAccounts.jsx'
 import AdminImport from './AdminImport.jsx'
 import BonusOverview from './BonusOverview.jsx'
+import AdminExtraBuyout from './AdminExtraBuyout.jsx'
 
 export default function AdminHome({ employee, onLogout }) {
   const [tab, setTab] = useState('winkels')
@@ -29,13 +30,17 @@ export default function AdminHome({ employee, onLogout }) {
         <button className={'tab' + (tab === 'bonus' ? ' active' : '')} onClick={() => setTab('bonus')}>
           Bonus
         </button>
+        <button className={'tab' + (tab === 'extra' ? ' active' : '')} onClick={() => setTab('extra')}>
+          Extra & afkoop
+        </button>
       </div>
 
       {tab === 'winkels' ? <AdminShops />
         : tab === 'managers' ? <AdminManagers />
         : tab === 'accounts' ? <AdminAccounts employee={employee} />
         : tab === 'import' ? <AdminImport />
-        : <BonusOverview filterManagerId={null} />}
+        : tab === 'bonus' ? <BonusOverview filterManagerId={null} />
+        : <AdminExtraBuyout />}
     </Shell>
   )
 }
