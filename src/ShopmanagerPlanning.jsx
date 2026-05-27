@@ -194,11 +194,9 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     }
   }
 
-  async function assignCandidate(c) {
-    const date = picker?.date
+  async function performAssign(c, date) {
     const shiftId = shiftIdByDate[date]
     if (!shiftId) return
-    setPicker(null)
     setBusy(true)
     try {
       const { error } = await supabase.from('assignments').insert({
@@ -216,6 +214,17 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function assignCandidate(c) {
+    const date = picker?.date
+    if (!shiftIdByDate[date]) return
+    setPicker(null)
+    if (c.over_max) {
+      setDialog({ kind: 'overmax', c, date })
+      return
+    }
+    await performAssign(c, date)
   }
 
   async function doRemove() {
@@ -428,16 +437,36 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
 
       <ConfirmDialog
         open={dialog !== null}
-        title={dialog?.kind === 'publish' ? 'Planning publiceren?' : 'Toewijzing verwijderen?'}
+        title={
+          dialog?.kind === 'publish'
+            ? 'Planning publiceren?'
+            : dialog?.kind === 'overmax'
+            ? 'Boven het gewenste maximum'
+            : 'Toewijzing verwijderen?'
+        }
         message={
           dialog?.kind === 'publish'
             ? empty > 0
               ? `Er zijn nog ${empty} lege ${empty === 1 ? 'dag' : 'dagen'}. Die blijven open tot je ze invult en opnieuw publiceert. De ingeplande medewerkers worden verwittigd. Toch publiceren?`
               : 'De planning wordt gepubliceerd en de ingeplande medewerkers worden verwittigd. Doorgaan?'
+            : dialog?.kind === 'overmax'
+            ? `${dialog.c.first_name} gaf aan deze maand maximaal ${dialog.c.max_extra} ${dialog.c.max_extra === 1 ? 'dag' : 'dagen'} ${dialog.c.kind === 'extra' ? 'extra uit te baten' : 'te werken'}, en zit daar al aan. Ben je zeker dat je ${dialog.c.first_name} toch wil inplannen op ${dialog.date}?`
             : `Wil je ${dialog?.name || 'deze persoon'} weghalen van ${dialog?.date || 'deze dag'}? De dag wordt dan weer leeg.`
         }
-        confirmLabel={dialog?.kind === 'publish' ? 'Ja, publiceren' : 'Ja, verwijderen'}
-        onConfirm={dialog?.kind === 'publish' ? doPublish : doRemove}
+        confirmLabel={
+          dialog?.kind === 'publish'
+            ? 'Ja, publiceren'
+            : dialog?.kind === 'overmax'
+            ? 'Ja, toch inplannen'
+            : 'Ja, verwijderen'
+        }
+        onConfirm={
+          dialog?.kind === 'publish'
+            ? doPublish
+            : dialog?.kind === 'overmax'
+            ? () => { const d = dialog; setDialog(null); performAssign(d.c, d.date) }
+            : doRemove
+        }
         onCancel={() => setDialog(null)}
       />
 
@@ -457,7 +486,14 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                 {picker.candidates.map((c) => (
                   <button key={c.employee_id + c.kind} style={pickerRow} onClick={() => assignCandidate(c)}>
                     <span style={{ fontWeight: 600 }}>{c.first_name}</span>
-                    <span className="muted" style={{ fontSize: 13 }}>{c.label}</span>
+                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                      <span className="muted" style={{ fontSize: 13 }}>{c.label}</span>
+                      {c.over_max && (
+                        <span style={{ fontSize: 11.5, color: 'var(--danger)' }}>
+                          ⚠ max. {c.max_extra} bereikt
+                        </span>
+                      )}
+                    </span>
                   </button>
                 ))}
               </div>
