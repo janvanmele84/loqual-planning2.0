@@ -43,6 +43,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [dialog, setDialog] = useState(null) // null | 'confirm' | 'extra'
+  const [released, setReleased] = useState(true)
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -52,12 +53,20 @@ export default function WorkerCalendar({ employee, onLogout }) {
     setLoading(true)
     setMsg(null)
     try {
+      // Welke winkels gaven deze maand vrij?
+      const { data: rel } = await supabase
+        .from('shop_availability_release')
+        .select('shop_id')
+        .eq('month_start', monthStart)
+      const releasedIds = new Set((rel || []).map((r) => r.shop_id))
+      setReleased(releasedIds.size > 0)
+
       const { data: shopRows } = await supabase
         .from('shops')
         .select('id, name')
         .eq('active', true)
         .order('name')
-      const shopList = shopRows || []
+      const shopList = (shopRows || []).filter((s) => releasedIds.has(s.id))
       setShops(shopList)
       const shopIds = shopList.map((s) => s.id)
 
@@ -306,7 +315,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
   }
 
   const canPrev = month > thisMonth
-  const canNext = month < addMonths(thisMonth, 2)
+  const canNext = month < addMonths(thisMonth, 6)
   const pendingDayCount = [...days].filter((d) => !lockedDays.has(d)).length
   const pendingShopCount = prefShops.filter((id) => !lockedShops.has(id)).length
   const maxRaisedPending = locked && (Number(maxDays) || 0) > lockedMaxDays
@@ -338,6 +347,14 @@ export default function WorkerCalendar({ employee, onLogout }) {
       {loading ? (
         <div className="muted" style={{ padding: 20, textAlign: 'center' }}>
           Laden…
+        </div>
+      ) : !released ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <div className="section-title">Nog niet vrijgegeven</div>
+          <div className="muted">
+            Deze maand is nog niet vrijgegeven door de winkels. Je kunt je beschikbaarheid hier nog niet ingeven —
+            kijk later terug of probeer een andere maand.
+          </div>
         </div>
       ) : (
         <>

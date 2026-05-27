@@ -49,6 +49,7 @@ export default function ShopmanagerShop({ shopId }) {
   const [extra, setExtra] = useState([])
   const [newExtra, setNewExtra] = useState({ date: '', start: '10:00', end: '18:00' })
   const [dialog, setDialog] = useState(null) // null | {kind:'delExtra', id, label}
+  const [released, setReleased] = useState(false)
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -93,6 +94,14 @@ export default function ShopmanagerShop({ shopId }) {
         map[s.shift_date] = { id: s.id, start: t5(s.start_time), end: t5(s.end_time) }
       })
       setDayShifts(map)
+
+      const { data: rel } = await supabase
+        .from('shop_availability_release')
+        .select('shop_id')
+        .eq('shop_id', shopId)
+        .eq('month_start', monthStart)
+        .maybeSingle()
+      setReleased(!!rel)
     } catch (e) {
       setMsg({ kind: 'err', text: 'Kalender laden mislukt.' })
     } finally {
@@ -273,8 +282,38 @@ export default function ShopmanagerShop({ shopId }) {
     }
   }
 
+  async function doRelease() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const { error } = await supabase.rpc('release_availability', { p_shop: shopId, p_month: monthStart })
+      if (error) throw error
+      setReleased(true)
+      setMsg({ kind: 'good', text: `${MONTHS[month.getMonth()]} vrijgegeven — medewerkers kunnen nu invullen.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Vrijgeven mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doUnrelease() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const { error } = await supabase.rpc('unrelease_availability', { p_shop: shopId, p_month: monthStart })
+      if (error) throw error
+      setReleased(false)
+      setMsg({ kind: 'good', text: `Vrijgave voor ${MONTHS[month.getMonth()]} ingetrokken.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Intrekken mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const canPrev = month > addMonths(thisMonth, -1)
-  const canNext = month < addMonths(thisMonth, 3)
+  const canNext = month < addMonths(thisMonth, 6)
 
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
   const blanks = leadingBlanks(month)
@@ -347,6 +386,28 @@ export default function ShopmanagerShop({ shopId }) {
       </button>
       <div className="hint" style={{ textAlign: 'center', marginTop: 0 }}>
         Doe dit eerst; pas daarna individuele dagen aan. Opnieuw toepassen voegt enkel ontbrekende dagen toe.
+      </div>
+
+      <div className="card">
+        <div className="section-title" style={{ marginBottom: 8 }}>Beschikbaarheden vrijgeven</div>
+        {released ? (
+          <div>
+            <span className="pubbadge published">Vrijgegeven</span>
+            <div className="hint" style={{ marginBottom: 10 }}>
+              Medewerkers kunnen hun beschikbaarheid voor {MONTHS[month.getMonth()]} {month.getFullYear()} ingeven.
+            </div>
+            <button className="btn" onClick={doUnrelease} disabled={busy}>Vrijgave intrekken</button>
+          </div>
+        ) : (
+          <div>
+            <div className="hint" style={{ marginTop: 0, marginBottom: 10 }}>
+              Zolang je niet vrijgeeft, kunnen medewerkers deze maand niet invullen. Geef vrij zodra de openingsdagen kloppen.
+            </div>
+            <button className="btn btn-primary btn-block" onClick={doRelease} disabled={busy}>
+              Openingsdagen vrijgeven voor {MONTHS[month.getMonth()]}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
