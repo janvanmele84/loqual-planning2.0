@@ -279,6 +279,9 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       )
       if (error) throw error
       setMsg({ kind: 'good', text: 'Planning gepubliceerd. De ingeplande medewerkers worden verwittigd.' })
+      // Onmiddellijke aflevering: de verzendmotor wakker schudden. Fire-and-forget;
+      // de cron pakt het anders sowieso op binnen enkele minuten.
+      supabase.functions.invoke('send-emails').catch(() => {})
       await loadPlanning()
     } catch (e) {
       setMsg({ kind: 'err', text: 'Publiceren mislukt.' })
