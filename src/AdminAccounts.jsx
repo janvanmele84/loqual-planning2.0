@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
 
-const ROLES = ['admin', 'shopmanager', 'ondernemer', 'flexi', 'jobstudent']
+const ROLES = ['admin', 'shopmanager', 'boekhouding', 'ondernemer', 'flexi', 'jobstudent']
 const ROLE_LABEL = {
   admin: 'Admin',
   shopmanager: 'Shopmanager',
+  boekhouding: 'Boekhouding',
   ondernemer: 'Ondernemer',
   flexi: 'Flexi',
   jobstudent: 'Jobstudent',
