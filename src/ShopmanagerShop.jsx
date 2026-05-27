@@ -27,6 +27,11 @@ function leadingBlanks(date) {
 function t5(t) {
   return t ? t.slice(0, 5) : ''
 }
+function fmtDate(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
 
 export default function ShopmanagerShop({ shopId }) {
   const today = new Date()
@@ -386,11 +391,11 @@ export default function ShopmanagerShop({ shopId }) {
         ) : (
           extra.map((s) => (
             <div className="row-item" key={s.id}>
-              <span>{s.shift_date} · {t5(s.start_time)}–{t5(s.end_time)}</span>
+              <span>{fmtDate(s.shift_date)} · {t5(s.start_time)}–{t5(s.end_time)}</span>
               <button
                 className="btn"
                 style={{ padding: '5px 10px', fontSize: 13 }}
-                onClick={() => setDialog({ kind: 'delExtra', id: s.id, label: `${s.shift_date} (${t5(s.start_time)}–${t5(s.end_time)})` })}
+                onClick={() => setDialog({ kind: 'delExtra', id: s.id, label: `${fmtDate(s.shift_date)} (${t5(s.start_time)}–${t5(s.end_time)})` })}
               >
                 Verwijderen
               </button>
@@ -415,7 +420,7 @@ export default function ShopmanagerShop({ shopId }) {
         <div style={ovl} onClick={() => setEditor(null)}>
           <div style={dlg} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginBottom: 4 }}>Dag aanpassen</h3>
-            <p className="muted" style={{ margin: '0 0 14px' }}>{editor.date}</p>
+            <p className="muted" style={{ margin: '0 0 14px' }}>{fmtDate(editor.date)}</p>
 
             <div className="row-item" style={{ borderTop: 'none' }}>
               <span>{editor.open ? 'Open' : 'Gesloten'}</span>

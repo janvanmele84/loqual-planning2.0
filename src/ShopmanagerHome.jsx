@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
 import ShopmanagerPlanning from './ShopmanagerPlanning.jsx'
 import ShopmanagerShop from './ShopmanagerShop.jsx'
+import ShopmanagerPeople from './ShopmanagerPeople.jsx'
 
 export default function ShopmanagerHome({ employee, onLogout }) {
   const [managedShops, setManagedShops] = useState([])
@@ -82,12 +83,17 @@ export default function ShopmanagerHome({ employee, onLogout }) {
         <button className={'tab' + (tab === 'winkel' ? ' active' : '')} onClick={() => setTab('winkel')}>
           Winkel
         </button>
+        <button className={'tab' + (tab === 'mensen' ? ' active' : '')} onClick={() => setTab('mensen')}>
+          Mensen
+        </button>
       </div>
 
       {tab === 'planning' ? (
         <ShopmanagerPlanning key={'p-' + shopId} employee={employee} shopId={shopId} shopsMap={shopsMap} />
-      ) : (
+      ) : tab === 'winkel' ? (
         <ShopmanagerShop key={'w-' + shopId} employee={employee} shopId={shopId} />
+      ) : (
+        <ShopmanagerPeople key={'m-' + shopId} shopId={shopId} />
       )}
     </Shell>
   )
