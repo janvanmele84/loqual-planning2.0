@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -29,16 +30,16 @@ export default function WorkerCalendar({ employee, onLogout }) {
   const thisMonth = firstOfMonth(today)
 
   const [month, setMonth] = useState(thisMonth)
-  const [shops, setShops] = useState([]) // alle actieve winkels { id, name }
-  const [prefShops, setPrefShops] = useState([]) // geordende lijst shop-ids (1e = voorkeur)
+  const [shops, setShops] = useState([])
+  const [prefShops, setPrefShops] = useState([])
   const [openSet, setOpenSet] = useState(new Set())
-  const [dbDays, setDbDays] = useState(new Set())
-  const [selected, setSelected] = useState(new Set())
+  const [days, setDays] = useState(new Set())
   const [maxDays, setMaxDays] = useState(0)
   const [submission, setSubmission] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -79,7 +80,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
       setSubmission(sub || null)
       setMaxDays(sub?.max_extra_days ?? 0)
 
-      let days = new Set()
+      let dd = new Set()
       let prefs = []
       if (sub) {
         const { data: ad } = await supabase
@@ -87,7 +88,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
           .select('day')
           .eq('submission_id', sub.id)
           .eq('kind', 'work')
-        days = new Set((ad || []).map((r) => r.day))
+        dd = new Set((ad || []).map((r) => r.day))
         const { data: pr } = await supabase
           .from('availability_shop_prefs')
           .select('shop_id, rank')
@@ -95,8 +96,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
           .order('rank')
         prefs = (pr || []).map((r) => r.shop_id)
       }
-      setDbDays(new Set(days))
-      setSelected(new Set(days))
+      setDays(dd)
       setPrefShops(prefs)
     } catch (e) {
       setMsg({ kind: 'err', text: 'Laden mislukt. Probeer opnieuw.' })
@@ -109,39 +109,14 @@ export default function WorkerCalendar({ employee, onLogout }) {
     load()
   }, [load])
 
-  function toggleDay(dateStr) {
-    if (!openSet.has(dateStr)) return
-    const next = new Set(selected)
-    if (next.has(dateStr)) {
-      if (locked && dbDays.has(dateStr)) {
-        setMsg({ kind: 'err', text: 'Deze dag is al bevestigd en kan niet meer verwijderd worden.' })
-        return
-      }
-      next.delete(dateStr)
-    } else {
-      next.add(dateStr)
-    }
-    setSelected(next)
-    setMsg(null)
-  }
-
-  function toggleShop(shopId) {
-    if (locked) return
-    setPrefShops((prev) => (prev.includes(shopId) ? prev.filter((id) => id !== shopId) : [...prev, shopId]))
-  }
-
   async function ensureSubmission() {
-    if (submission) {
-      // houd max_extra_days up-to-date
-      await supabase
-        .from('availability_submissions')
-        .update({ max_extra_days: Number(maxDays) || 0 })
-        .eq('id', submission.id)
-      return submission
-    }
+    if (submission) return submission
     const { data, error } = await supabase
       .from('availability_submissions')
-      .insert({ employee_id: employee.id, month_start: monthStart, max_extra_days: Number(maxDays) || 0 })
+      .upsert(
+        { employee_id: employee.id, month_start: monthStart, max_extra_days: Number(maxDays) || 0 },
+        { onConflict: 'employee_id,month_start' },
+      )
       .select('id, confirmed_at, max_extra_days')
       .single()
     if (error) throw error
@@ -149,62 +124,97 @@ export default function WorkerCalendar({ employee, onLogout }) {
     return data
   }
 
-  async function syncPrefs(subId) {
-    await supabase.from('availability_shop_prefs').delete().eq('submission_id', subId)
-    if (prefShops.length) {
-      await supabase
-        .from('availability_shop_prefs')
-        .insert(prefShops.map((shopId, i) => ({ submission_id: subId, shop_id: shopId, rank: i + 1 })))
+  async function toggleDay(dateStr) {
+    if (!openSet.has(dateStr)) return
+    const has = days.has(dateStr)
+    if (has && locked) {
+      setMsg({ kind: 'err', text: 'Deze dag is al bevestigd en kan niet meer verwijderd worden.' })
+      return
     }
-  }
-
-  async function persist() {
-    const sub = await ensureSubmission()
-    const toAdd = [...selected].filter((d) => !dbDays.has(d))
-    const toRemove = [...dbDays].filter((d) => !selected.has(d))
-    if (toRemove.length) {
-      await supabase
-        .from('availability_days')
-        .delete()
-        .eq('submission_id', sub.id)
-        .eq('kind', 'work')
-        .in('day', toRemove)
-    }
-    if (toAdd.length) {
-      await supabase
-        .from('availability_days')
-        .insert(toAdd.map((d) => ({ submission_id: sub.id, day: d, kind: 'work' })))
-    }
-    if (!locked) await syncPrefs(sub.id)
-    setDbDays(new Set(selected))
-    return sub
-  }
-
-  async function save() {
-    setSaving(true)
+    setDays((prev) => {
+      const n = new Set(prev)
+      has ? n.delete(dateStr) : n.add(dateStr)
+      return n
+    })
     setMsg(null)
     try {
-      await persist()
-      setMsg({ kind: 'good', text: 'Bewaard.' })
+      const sub = await ensureSubmission()
+      if (has) {
+        await supabase
+          .from('availability_days')
+          .delete()
+          .eq('submission_id', sub.id)
+          .eq('kind', 'work')
+          .eq('day', dateStr)
+      } else {
+        await supabase.from('availability_days').insert({ submission_id: sub.id, day: dateStr, kind: 'work' })
+      }
     } catch (e) {
-      setMsg({ kind: 'err', text: 'Bewaren mislukt.' })
-    } finally {
-      setSaving(false)
+      setDays((prev) => {
+        const n = new Set(prev)
+        has ? n.add(dateStr) : n.delete(dateStr)
+        return n
+      })
+      setMsg({ kind: 'err', text: 'Opslaan mislukt — probeer opnieuw.' })
     }
   }
 
-  async function confirm() {
+  async function persistPrefs(order, subId) {
+    await supabase.from('availability_shop_prefs').delete().eq('submission_id', subId)
+    if (order.length) {
+      await supabase
+        .from('availability_shop_prefs')
+        .insert(order.map((shopId, i) => ({ submission_id: subId, shop_id: shopId, rank: i + 1 })))
+    }
+  }
+
+  async function toggleShop(shopId) {
+    if (locked) return
+    const order = prefShops.includes(shopId)
+      ? prefShops.filter((id) => id !== shopId)
+      : [...prefShops, shopId]
+    setPrefShops(order)
+    setMsg(null)
+    try {
+      const sub = await ensureSubmission()
+      await persistPrefs(order, sub.id)
+    } catch (e) {
+      setPrefShops(prefShops)
+      setMsg({ kind: 'err', text: 'Winkelvoorkeur opslaan mislukt.' })
+    }
+  }
+
+  async function saveMaxDays() {
+    if (locked) return
+    try {
+      const sub = await ensureSubmission()
+      await supabase
+        .from('availability_submissions')
+        .update({ max_extra_days: Number(maxDays) || 0 })
+        .eq('id', sub.id)
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Opslaan mislukt.' })
+    }
+  }
+
+  function askConfirm() {
     if (prefShops.length === 0) {
       setMsg({ kind: 'err', text: 'Kies minstens één winkel waar je wil werken.' })
       return
     }
-    if (selected.size === 0) {
+    if (days.size === 0) {
       setMsg({ kind: 'err', text: 'Duid minstens één dag aan.' })
       return
     }
-    setSaving(true)
+    setConfirmOpen(true)
+  }
+
+  async function doConfirm() {
+    setConfirmOpen(false)
+    setBusy(true)
     try {
-      const sub = await persist()
+      const sub = await ensureSubmission()
+      await saveMaxDays()
       const { data, error } = await supabase
         .from('availability_submissions')
         .update({ confirmed_at: new Date().toISOString() })
@@ -217,7 +227,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
     } catch (e) {
       setMsg({ kind: 'err', text: 'Bevestigen mislukt.' })
     } finally {
-      setSaving(false)
+      setBusy(false)
     }
   }
 
@@ -256,7 +266,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
           <div className="banner ok">
             <div className="row">
               <span>
-                Je gaf {selected.size} {selected.size === 1 ? 'dag' : 'dagen'} door
+                Je gaf {days.size} {days.size === 1 ? 'dag' : 'dagen'} door
                 {Number(maxDays) > 0 ? ` · je wil er max ${maxDays} werken` : ''}
               </span>
             </div>
@@ -273,6 +283,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
               value={maxDays}
               disabled={locked}
               onChange={(e) => setMaxDays(e.target.value)}
+              onBlur={saveMaxDays}
             />
           </div>
 
@@ -320,13 +331,13 @@ export default function WorkerCalendar({ employee, onLogout }) {
                     className={
                       'day' +
                       (!openSet.has(c.str) ? ' closed' : '') +
-                      (selected.has(c.str) ? ' sel' : '') +
+                      (days.has(c.str) ? ' sel' : '') +
                       (c.isToday ? ' today' : '')
                     }
                     onClick={() => toggleDay(c.str)}
                   >
                     {c.d}
-                    {locked && dbDays.has(c.str) && <span className="lock">●</span>}
+                    {locked && days.has(c.str) && <span className="lock">●</span>}
                   </div>
                 ),
               )}
@@ -341,22 +352,30 @@ export default function WorkerCalendar({ employee, onLogout }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <button className="btn btn-block" onClick={save} disabled={saving}>
-              {saving ? 'Bezig…' : 'Bewaren'}
-            </button>
-            <button className="btn btn-primary btn-block" onClick={confirm} disabled={saving || locked}>
-              {locked ? 'Bevestigd' : 'Bevestigen'}
-            </button>
+          <button
+            className="btn btn-primary btn-block"
+            style={{ marginTop: 16 }}
+            onClick={askConfirm}
+            disabled={busy || locked}
+          >
+            {locked ? 'Bevestigd' : busy ? 'Bezig…' : 'Bevestigen'}
+          </button>
+          <div className="hint" style={{ textAlign: 'center' }}>
+            {locked
+              ? 'Je doorgave staat vast. Toevoegen kan nog, verwijderen niet.'
+              : 'Je keuzes worden automatisch bewaard.'}
           </div>
-          {!locked && (
-            <div className="hint" style={{ textAlign: 'center' }}>
-              Na bevestigen kun je enkel nog dagen toevoegen.
-            </div>
-          )}
           {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Beschikbaarheden bevestigen?"
+        message="Als je bevestigt, kun je je doorgegeven dagen niet meer wijzigen of verwijderen — toevoegen kan nog wel. Dit kun je niet ongedaan maken. Ben je zeker?"
+        onConfirm={doConfirm}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </Shell>
   )
 }

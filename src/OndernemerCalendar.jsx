@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -20,7 +21,6 @@ function firstOfMonth(d) {
 function addMonths(d, n) {
   return new Date(d.getFullYear(), d.getMonth() + n, 1)
 }
-// maandag = 0
 function leadingBlanks(date) {
   return (new Date(date.getFullYear(), date.getMonth(), 1).getDay() + 6) % 7
 }
@@ -30,16 +30,16 @@ export default function OndernemerCalendar({ employee, onLogout }) {
   const thisMonth = firstOfMonth(today)
 
   const [month, setMonth] = useState(thisMonth)
-  const [shops, setShops] = useState([]) // { shop_id, name, must_operate }
+  const [shops, setShops] = useState([])
   const [openSet, setOpenSet] = useState(new Set())
-  const [dbDays, setDbDays] = useState(new Set()) // wat in de DB staat
-  const [selected, setSelected] = useState(new Set()) // huidige selectie
-  const [buyouts, setBuyouts] = useState(new Set()) // shop_ids afgekocht deze maand
-  const [submission, setSubmission] = useState(null) // { id, confirmed_at }
+  const [days, setDays] = useState(new Set()) // altijd in sync met de DB (auto-save)
+  const [buyouts, setBuyouts] = useState(new Set())
+  const [submission, setSubmission] = useState(null)
   const [required, setRequired] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState(null) // { kind, text }
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -86,17 +86,16 @@ export default function OndernemerCalendar({ employee, onLogout }) {
         .maybeSingle()
       setSubmission(sub || null)
 
-      let days = new Set()
+      let dd = new Set()
       if (sub) {
         const { data: ad } = await supabase
           .from('availability_days')
           .select('day')
           .eq('submission_id', sub.id)
           .eq('kind', 'mandatory')
-        days = new Set((ad || []).map((r) => r.day))
+        dd = new Set((ad || []).map((r) => r.day))
       }
-      setDbDays(new Set(days))
-      setSelected(new Set(days))
+      setDays(dd)
 
       const { data: bo } = await supabase
         .from('buyouts')
@@ -120,20 +119,53 @@ export default function OndernemerCalendar({ employee, onLogout }) {
     load()
   }, [load])
 
-  function toggleDay(dateStr) {
+  async function ensureSubmission() {
+    if (submission) return submission
+    const { data, error } = await supabase
+      .from('availability_submissions')
+      .upsert({ employee_id: employee.id, month_start: monthStart }, { onConflict: 'employee_id,month_start' })
+      .select('id, confirmed_at')
+      .single()
+    if (error) throw error
+    setSubmission(data)
+    return data
+  }
+
+  async function toggleDay(dateStr) {
     if (!openSet.has(dateStr)) return
-    const next = new Set(selected)
-    if (next.has(dateStr)) {
-      if (locked && dbDays.has(dateStr)) {
-        setMsg({ kind: 'err', text: 'Deze dag is al bevestigd en kan niet meer verwijderd worden.' })
-        return
-      }
-      next.delete(dateStr)
-    } else {
-      next.add(dateStr)
+    const has = days.has(dateStr)
+    if (has && locked) {
+      setMsg({ kind: 'err', text: 'Deze dag is al bevestigd en kan niet meer verwijderd worden.' })
+      return
     }
-    setSelected(next)
+    // optimistisch bijwerken
+    setDays((prev) => {
+      const n = new Set(prev)
+      has ? n.delete(dateStr) : n.add(dateStr)
+      return n
+    })
     setMsg(null)
+    try {
+      const sub = await ensureSubmission()
+      if (has) {
+        await supabase
+          .from('availability_days')
+          .delete()
+          .eq('submission_id', sub.id)
+          .eq('kind', 'mandatory')
+          .eq('day', dateStr)
+      } else {
+        await supabase.from('availability_days').insert({ submission_id: sub.id, day: dateStr, kind: 'mandatory' })
+      }
+    } catch (e) {
+      // terugdraaien
+      setDays((prev) => {
+        const n = new Set(prev)
+        has ? n.add(dateStr) : n.delete(dateStr)
+        return n
+      })
+      setMsg({ kind: 'err', text: 'Opslaan mislukt — probeer opnieuw.' })
+    }
   }
 
   async function toggleBuyout(shopId) {
@@ -158,62 +190,19 @@ export default function OndernemerCalendar({ employee, onLogout }) {
     }
   }
 
-  async function ensureSubmission() {
-    if (submission) return submission
-    const { data, error } = await supabase
-      .from('availability_submissions')
-      .insert({ employee_id: employee.id, month_start: monthStart, max_extra_days: 0 })
-      .select('id, confirmed_at')
-      .single()
-    if (error) throw error
-    setSubmission(data)
-    return data
-  }
-
-  async function save() {
-    setSaving(true)
-    setMsg(null)
-    try {
-      const sub = await ensureSubmission()
-      const toAdd = [...selected].filter((d) => !dbDays.has(d))
-      const toRemove = [...dbDays].filter((d) => !selected.has(d))
-      if (toRemove.length) {
-        await supabase
-          .from('availability_days')
-          .delete()
-          .eq('submission_id', sub.id)
-          .eq('kind', 'mandatory')
-          .in('day', toRemove)
-      }
-      if (toAdd.length) {
-        await supabase
-          .from('availability_days')
-          .insert(toAdd.map((d) => ({ submission_id: sub.id, day: d, kind: 'mandatory' })))
-      }
-      setDbDays(new Set(selected))
-      setMsg({ kind: 'good', text: 'Bewaard.' })
-    } catch (e) {
-      setMsg({ kind: 'err', text: 'Bewaren mislukt.' })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function confirm() {
-    if (selected.size < required) {
+  function askConfirm() {
+    if (days.size < required) {
       setMsg({ kind: 'err', text: `Je hebt minstens ${required} beschikbaarheden nodig.` })
       return
     }
-    setSaving(true)
+    setConfirmOpen(true)
+  }
+
+  async function doConfirm() {
+    setConfirmOpen(false)
+    setBusy(true)
     try {
       const sub = await ensureSubmission()
-      const toAdd = [...selected].filter((d) => !dbDays.has(d))
-      if (toAdd.length) {
-        await supabase
-          .from('availability_days')
-          .insert(toAdd.map((d) => ({ submission_id: sub.id, day: d, kind: 'mandatory' })))
-        setDbDays(new Set(selected))
-      }
       const { data, error } = await supabase
         .from('availability_submissions')
         .update({ confirmed_at: new Date().toISOString() })
@@ -226,20 +215,17 @@ export default function OndernemerCalendar({ employee, onLogout }) {
     } catch (e) {
       setMsg({ kind: 'err', text: 'Bevestigen mislukt.' })
     } finally {
-      setSaving(false)
+      setBusy(false)
     }
   }
 
-  // maand-navigatie: 3 maanden vooruit, en niet vooruit als de huidige maand onder het minimum zit
   const minMonth = thisMonth
   const maxMonth = addMonths(thisMonth, 2)
   const canPrev = month > minMonth
-  const meetsMin = selected.size >= required
-  const canNext = month < maxMonth && meetsMin
+  const meetsMin = days.size >= required
+  const canNext = month < maxMonth && (meetsMin || openSet.size === 0)
 
-  const count = selected.size
-
-  // bouw de kalendercellen
+  const count = days.size
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
   const blanks = leadingBlanks(month)
   const cells = []
@@ -262,7 +248,7 @@ export default function OndernemerCalendar({ employee, onLogout }) {
           className="icon-btn"
           onClick={() => canNext && setMonth(addMonths(month, 1))}
           disabled={!canNext}
-          title={!meetsMin ? 'Geef eerst genoeg beschikbaarheden door voor deze maand' : ''}
+          title={!meetsMin && openSet.size > 0 ? 'Geef eerst genoeg beschikbaarheden door voor deze maand' : ''}
         >
           ›
         </button>
@@ -303,13 +289,13 @@ export default function OndernemerCalendar({ employee, onLogout }) {
                     className={
                       'day' +
                       (!openSet.has(c.str) ? ' closed' : '') +
-                      (selected.has(c.str) ? ' sel' : '') +
+                      (days.has(c.str) ? ' sel' : '') +
                       (c.isToday ? ' today' : '')
                     }
                     onClick={() => toggleDay(c.str)}
                   >
                     {c.d}
-                    {locked && dbDays.has(c.str) && <span className="lock">●</span>}
+                    {locked && days.has(c.str) && <span className="lock">●</span>}
                   </div>
                 ),
               )}
@@ -349,18 +335,30 @@ export default function OndernemerCalendar({ employee, onLogout }) {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <button className="btn btn-block" onClick={save} disabled={saving}>
-              {saving ? 'Bezig…' : 'Bewaren'}
-            </button>
-            <button className="btn btn-primary btn-block" onClick={confirm} disabled={saving || locked}>
-              {locked ? 'Bevestigd' : 'Bevestigen'}
-            </button>
+          <button
+            className="btn btn-primary btn-block"
+            style={{ marginTop: 16 }}
+            onClick={askConfirm}
+            disabled={busy || locked}
+          >
+            {locked ? 'Bevestigd' : busy ? 'Bezig…' : 'Bevestigen'}
+          </button>
+          <div className="hint" style={{ textAlign: 'center' }}>
+            {locked
+              ? 'Je doorgave staat vast. Toevoegen kan nog, verwijderen niet.'
+              : 'Je keuzes worden automatisch bewaard.'}
           </div>
-          {!locked && <div className="hint" style={{ textAlign: 'center' }}>Na bevestigen kun je enkel nog dagen toevoegen.</div>}
           {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Beschikbaarheden bevestigen?"
+        message="Als je bevestigt, kun je je doorgegeven dagen niet meer wijzigen of verwijderen — toevoegen kan nog wel. Dit kun je niet ongedaan maken. Ben je zeker?"
+        onConfirm={doConfirm}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </Shell>
   )
 }
