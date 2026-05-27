@@ -14,22 +14,25 @@ export default function BoekhoudingHome({ employee, onLogout }) {
   const [month, setMonth] = useState(addMonths(thisMonth, -1))
   const monthStart = ymd(month)
   const monthLabel = `${MONTHS[month.getMonth()]} ${month.getFullYear()}`
-  const [tab, setTab] = useState('uit') // 'uit' | 'werk'
+  const [tab, setTab] = useState('uit') // 'uit' | 'werk' | 'detail'
   const [loading, setLoading] = useState(true)
   const [uit, setUit] = useState([])
   const [werk, setWerk] = useState([])
+  const [detail, setDetail] = useState([])
 
   useEffect(() => {
     let active = true
     ;(async () => {
       setLoading(true)
-      const [u, w] = await Promise.all([
+      const [u, w, d] = await Promise.all([
         supabase.rpc('boekhouding_uitbatingen', { p_month: monthStart }),
         supabase.rpc('boekhouding_werkers', { p_month: monthStart }),
+        supabase.rpc('boekhouding_detail', { p_month: monthStart }),
       ])
       if (!active) return
       setUit(u.data || [])
       setWerk(w.data || [])
+      setDetail(d.data || [])
       setLoading(false)
     })()
     return () => {
@@ -53,8 +56,17 @@ export default function BoekhoudingHome({ employee, onLogout }) {
   function exportWerkers() {
     downloadCsv(
       `werkers-${monthStart}.csv`,
-      ['Voornaam', 'Familienaam', 'Rol', 'E-mail', 'Gewerkte dagen'],
-      werk.map((r) => [r.first_name, r.last_name || '', r.role, r.email, r.gewerkt]),
+      ['Voornaam', 'Familienaam', 'Rol', 'E-mail', 'Winkel', 'Gewerkte dagen'],
+      werk.map((r) => [r.first_name, r.last_name || '', r.role, r.email, r.shop_name, r.gewerkt]),
+    )
+  }
+  function exportDetail() {
+    downloadCsv(
+      `detail-${monthStart}.csv`,
+      ['Datum', 'Soort', 'Voornaam', 'Familienaam', 'Rol', 'Bedrijfsnaam', 'Winkel'],
+      detail.map((r) => [
+        r.day, r.soort, r.first_name, r.last_name || '', r.role, r.company_name || '', r.shop_name,
+      ]),
     )
   }
 
@@ -74,6 +86,9 @@ export default function BoekhoudingHome({ employee, onLogout }) {
         </button>
         <button className={'tab' + (tab === 'werk' ? ' active' : '')} onClick={() => setTab('werk')}>
           Flexi's & jobstudenten
+        </button>
+        <button className={'tab' + (tab === 'detail' ? ' active' : '')} onClick={() => setTab('detail')}>
+          Detail per dag
         </button>
       </div>
 
@@ -128,11 +143,12 @@ export default function BoekhoudingHome({ employee, onLogout }) {
             </>
           )}
         </div>
-      ) : (
+      ) : tab === 'werk' ? (
         <div className="card">
           <div className="section-title">Flexi's & jobstudenten — {monthLabel}</div>
           <div className="hint" style={{ marginTop: 0 }}>
-            Wie heeft effectief gewerkt in deze maand, en hoeveel dagen. Bedoeld voor factuurcontrole.
+            Wie heeft effectief gewerkt deze maand, in welke winkel en hoeveel dagen. Iemand die in meerdere winkels
+            werkte, staat met één rij per winkel.
           </div>
           {werk.length === 0 ? (
             <div className="muted">Niemand heeft gewerkt in deze maand.</div>
@@ -144,16 +160,19 @@ export default function BoekhoudingHome({ employee, onLogout }) {
                     <tr>
                       <th style={th}>Naam</th>
                       <th style={th}>Rol</th>
-                      <th style={th}>E-mail</th>
+                      <th style={th}>Winkel</th>
                       <th style={thR}>Gewerkte dagen</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {werk.map((r) => (
-                      <tr key={r.employee_id}>
-                        <td style={td}>{r.first_name}{r.last_name ? ' ' + r.last_name : ''}</td>
+                    {werk.map((r, i) => (
+                      <tr key={i}>
+                        <td style={td}>
+                          {r.first_name}{r.last_name ? ' ' + r.last_name : ''}
+                          <div className="muted" style={{ fontSize: 12 }}>{r.email}</div>
+                        </td>
                         <td style={td}>{r.role === 'flexi' ? 'Flexi' : 'Jobstudent'}</td>
-                        <td style={td}>{r.email}</td>
+                        <td style={td}>{r.shop_name}</td>
                         <td style={{ ...tdR, fontWeight: 600 }}>{r.gewerkt}</td>
                       </tr>
                     ))}
@@ -166,9 +185,67 @@ export default function BoekhoudingHome({ employee, onLogout }) {
             </>
           )}
         </div>
+      ) : (
+        <div className="card">
+          <div className="section-title">Detail per dag — {monthLabel}</div>
+          <div className="hint" style={{ marginTop: 0 }}>
+            Chronologische lijst van élke afkoop, uitbating, extra uitbating en werkdag, met de winkel waar het
+            voor telt (bij overgenomen dagen = de thuiswinkel van de ondernemer).
+          </div>
+          {detail.length === 0 ? (
+            <div className="muted">Niets geregistreerd in deze maand.</div>
+          ) : (
+            <>
+              <div style={{ overflowX: 'auto', maxHeight: 500, overflowY: 'auto' }}>
+                <table style={tbl}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Datum</th>
+                      <th style={th}>Soort</th>
+                      <th style={th}>Persoon</th>
+                      <th style={th}>Winkel</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.map((r, i) => (
+                      <tr key={i}>
+                        <td style={td}>{r.day}</td>
+                        <td style={td}>
+                          <span style={soortBadge(r.soort)}>{r.soort}</span>
+                        </td>
+                        <td style={td}>
+                          {r.first_name}{r.last_name ? ' ' + r.last_name : ''}
+                          {r.company_name && <span className="muted" style={{ fontSize: 12 }}> · {r.company_name}</span>}
+                        </td>
+                        <td style={td}>{r.shop_name}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button className="btn btn-block" style={{ marginTop: 12 }} onClick={exportDetail}>
+                Exporteer naar CSV
+              </button>
+            </>
+          )}
+        </div>
       )}
     </Shell>
   )
+}
+
+function soortBadge(soort) {
+  const colors = {
+    afkoop:            { bg: '#fff2dd', fg: '#8a5a17' },
+    uitbating:         { bg: 'var(--ok-bg, #e8efe4)', fg: 'var(--ok, #2f5a31)' },
+    'extra-uitbating': { bg: '#e8eef7', fg: '#2d4a7a' },
+    werkdag:           { bg: '#f1ebe5', fg: '#5a4837' },
+  }
+  const c = colors[soort] || { bg: '#eee', fg: '#333' }
+  return {
+    background: c.bg, color: c.fg, padding: '2px 8px', borderRadius: 6,
+    fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+  }
 }
 
 function downloadCsv(filename, headers, rows) {
