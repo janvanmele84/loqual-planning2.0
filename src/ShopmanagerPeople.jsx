@@ -8,6 +8,11 @@ function ymd(d) {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
+function fmtDate(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
 const ROLE_LABEL = { flexi: 'Flexi', jobstudent: 'Jobstudent', ondernemer: 'Ondernemer' }
 
 export default function ShopmanagerPeople({ shopId }) {
@@ -17,7 +22,7 @@ export default function ShopmanagerPeople({ shopId }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [editor, setEditor] = useState(null)
-  const [dialog, setDialog] = useState(null) // null | {linkId, name}
+  const [dialog, setDialog] = useState(null)
 
   const load = useCallback(async () => {
     if (!shopId) return
@@ -25,23 +30,33 @@ export default function ShopmanagerPeople({ shopId }) {
     try {
       const { data: es } = await supabase
         .from('entrepreneur_shops')
-        .select('id, must_operate, employees(id, first_name, last_name, company_name, email)')
+        .select('id, must_operate, operate_days, start_date, end_date, employees(id, first_name, last_name, company_name, email)')
         .eq('shop_id', shopId)
-      const ond = (es || []).map((r) => ({
-        linkId: r.id,
-        must_operate: r.must_operate,
-        employeeId: r.employees?.id,
-        first_name: r.employees?.first_name || '',
-        last_name: r.employees?.last_name || '',
-        company_name: r.employees?.company_name || '',
-        email: r.employees?.email || '',
-      }))
+      const seen = new Set()
+      const ond = []
+      ;(es || []).forEach((r) => {
+        const eid = r.employees?.id
+        if (!eid || seen.has(eid)) return
+        seen.add(eid)
+        ond.push({
+          linkId: r.id,
+          must_operate: r.must_operate,
+          operate_days: r.operate_days || 1,
+          start_date: r.start_date,
+          end_date: r.end_date,
+          employeeId: eid,
+          first_name: r.employees?.first_name || '',
+          last_name: r.employees?.last_name || '',
+          company_name: r.employees?.company_name || '',
+          email: r.employees?.email || '',
+        })
+      })
       ond.sort((a, b) => a.first_name.localeCompare(b.first_name))
       setOndernemers(ond)
 
       const { data: w } = await supabase
         .from('employees')
-        .select('id, first_name, last_name, email, role')
+        .select('id, first_name, last_name, email, role, active')
         .in('role', ['flexi', 'jobstudent'])
         .order('first_name')
       setWorkers(w || [])
@@ -56,21 +71,38 @@ export default function ShopmanagerPeople({ shopId }) {
     load()
   }, [load])
 
-  function addOndernemer() {
+  function addPerson() {
     setMsg(null)
-    setEditor({ kind: 'ondernemer', mode: 'add', first_name: '', last_name: '', company_name: '', email: '', must_operate: true })
+    setEditor({
+      mode: 'add', role: 'ondernemer',
+      first_name: '', last_name: '', email: '', company_name: '',
+      must_operate: true, operate_days: 1, start_date: ymd(new Date()), end_date: '', active: true,
+    })
   }
   function editOndernemer(o) {
     setMsg(null)
-    setEditor({ kind: 'ondernemer', mode: 'edit', linkId: o.linkId, employeeId: o.employeeId, first_name: o.first_name, last_name: o.last_name, company_name: o.company_name, email: o.email, must_operate: o.must_operate })
-  }
-  function addWorker() {
-    setMsg(null)
-    setEditor({ kind: 'worker', mode: 'add', first_name: '', last_name: '', email: '', role: 'flexi' })
+    setEditor({
+      mode: 'edit', role: 'ondernemer', linkId: o.linkId, employeeId: o.employeeId,
+      first_name: o.first_name, last_name: o.last_name, email: o.email, company_name: o.company_name,
+      must_operate: o.must_operate, operate_days: o.operate_days, start_date: o.start_date, end_date: o.end_date || '',
+    })
   }
   function editWorker(w) {
     setMsg(null)
-    setEditor({ kind: 'worker', mode: 'edit', employeeId: w.id, first_name: w.first_name, last_name: w.last_name || '', email: w.email, role: w.role })
+    setEditor({
+      mode: 'edit', role: w.role, employeeId: w.id,
+      first_name: w.first_name, last_name: w.last_name || '', email: w.email, active: w.active,
+    })
+  }
+
+  async function toggleWorkerActive(w) {
+    try {
+      const { error } = await supabase.from('employees').update({ active: !w.active }).eq('id', w.id)
+      if (error) throw error
+      setWorkers((prev) => prev.map((x) => (x.id === w.id ? { ...x, active: !x.active } : x)))
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Bijwerken mislukt.' })
+    }
   }
 
   async function saveEditor() {
@@ -80,12 +112,12 @@ export default function ShopmanagerPeople({ shopId }) {
       setMsg({ kind: 'err', text: 'Voornaam en e-mail zijn verplicht.' })
       return
     }
+    const isOnd = e.role === 'ondernemer'
     setBusy(true)
     setMsg(null)
     try {
-      if (e.kind === 'ondernemer') {
+      if (isOnd) {
         if (e.mode === 'add') {
-          // bestaat de persoon al? (zelfde e-mail) -> bestaande koppelen
           const { data: existing } = await supabase.from('employees').select('id').eq('email', e.email.trim()).maybeSingle()
           let empId = existing?.id
           if (empId && ondernemers.some((o) => o.employeeId === empId)) {
@@ -97,29 +129,26 @@ export default function ShopmanagerPeople({ shopId }) {
             const { data: ins, error: insErr } = await supabase
               .from('employees')
               .insert({ role: 'ondernemer', first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, company_name: e.company_name.trim() || null, email: e.email.trim() })
-              .select('id')
-              .single()
+              .select('id').single()
             if (insErr) throw insErr
             empId = ins.id
           }
-          const { error: linkErr } = await supabase
-            .from('entrepreneur_shops')
-            .insert({ entrepreneur_id: empId, shop_id: shopId, start_date: ymd(new Date()), must_operate: e.must_operate })
+          const { error: linkErr } = await supabase.from('entrepreneur_shops').insert({
+            entrepreneur_id: empId, shop_id: shopId, start_date: e.start_date || ymd(new Date()),
+            end_date: e.end_date || null, must_operate: e.must_operate, operate_days: Number(e.operate_days) || 1,
+          })
           if (linkErr) throw linkErr
         } else {
-          const { error: upErr } = await supabase
-            .from('employees')
+          const { error: upErr } = await supabase.from('employees')
             .update({ first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, company_name: e.company_name.trim() || null, email: e.email.trim() })
             .eq('id', e.employeeId)
           if (upErr) throw upErr
-          const { error: linkErr } = await supabase
-            .from('entrepreneur_shops')
-            .update({ must_operate: e.must_operate })
+          const { error: linkErr } = await supabase.from('entrepreneur_shops')
+            .update({ must_operate: e.must_operate, operate_days: Number(e.operate_days) || 1, start_date: e.start_date, end_date: e.end_date || null })
             .eq('id', e.linkId)
           if (linkErr) throw linkErr
         }
       } else {
-        // worker
         if (e.mode === 'add') {
           const { data: existing } = await supabase.from('employees').select('id').eq('email', e.email.trim()).maybeSingle()
           if (existing) {
@@ -127,14 +156,12 @@ export default function ShopmanagerPeople({ shopId }) {
             setBusy(false)
             return
           }
-          const { error: insErr } = await supabase
-            .from('employees')
-            .insert({ role: e.role, first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, email: e.email.trim() })
+          const { error: insErr } = await supabase.from('employees')
+            .insert({ role: e.role, first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, email: e.email.trim(), active: e.active })
           if (insErr) throw insErr
         } else {
-          const { error: upErr } = await supabase
-            .from('employees')
-            .update({ first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, email: e.email.trim(), role: e.role })
+          const { error: upErr } = await supabase.from('employees')
+            .update({ first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, email: e.email.trim(), active: e.active })
             .eq('id', e.employeeId)
           if (upErr) throw upErr
         }
@@ -170,15 +197,16 @@ export default function ShopmanagerPeople({ shopId }) {
     return <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
   }
 
+  const isOnd = editor?.role === 'ondernemer'
+
   return (
     <>
+      <button className="btn btn-primary btn-block" onClick={addPerson} style={{ marginBottom: 16 }}>
+        + Persoon toevoegen
+      </button>
+
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span className="section-title" style={{ margin: 0 }}>Ondernemers ({ondernemers.length})</span>
-          <button className="btn btn-primary" style={{ padding: '7px 12px', fontSize: 13 }} onClick={addOndernemer}>
-            + Toevoegen
-          </button>
-        </div>
+        <div className="section-title">Ondernemers ({ondernemers.length})</div>
         {ondernemers.length === 0 ? (
           <div className="muted">Nog geen ondernemers in deze winkel.</div>
         ) : (
@@ -189,7 +217,10 @@ export default function ShopmanagerPeople({ shopId }) {
                 {o.company_name ? <span className="muted"> · {o.company_name}</span> : null}
                 <br />
                 <span className={'tag ' + (o.must_operate ? 'bevestigd' : 'niet')} style={{ fontSize: 10 }}>
-                  {o.must_operate ? 'Uitbatingsplicht' : 'Geen uitbatingsplicht'}
+                  {o.must_operate ? (o.operate_days > 1 ? `${o.operate_days} uitbatingsdagen` : 'Uitbatingsplicht') : 'Geen uitbatingsplicht'}
+                </span>
+                <span className="muted" style={{ fontSize: 12, marginLeft: 8 }}>
+                  vanaf {fmtDate(o.start_date)}{o.end_date ? ` tot ${fmtDate(o.end_date)}` : ''}
                 </span>
               </span>
               <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -202,25 +233,27 @@ export default function ShopmanagerPeople({ shopId }) {
       </div>
 
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span className="section-title" style={{ margin: 0 }}>Flexi's & jobstudenten ({workers.length})</span>
-          <button className="btn btn-primary" style={{ padding: '7px 12px', fontSize: 13 }} onClick={addWorker}>
-            + Toevoegen
-          </button>
-        </div>
+        <div className="section-title">Flexi's & jobstudenten ({workers.length})</div>
         {workers.length === 0 ? (
           <div className="muted">Nog geen flexi's of jobstudenten.</div>
         ) : (
           workers.map((w) => (
             <div className="row-item" key={w.id}>
               <span>
-                <strong>{w.first_name} {w.last_name}</strong>
+                <strong style={{ opacity: w.active ? 1 : 0.5 }}>{w.first_name} {w.last_name}</strong>
                 <span className="muted"> · {ROLE_LABEL[w.role] || w.role}</span>
+                {!w.active && <span className="tag niet" style={{ fontSize: 10, marginLeft: 8 }}>Niet actief</span>}
               </span>
-              <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => editWorker(w)}>Bewerken</button>
+              <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                <button className={'sw' + (w.active ? ' on' : '')} onClick={() => toggleWorkerActive(w)} aria-label="Actief">
+                  <span className="knob" />
+                </button>
+                <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => editWorker(w)}>Bewerken</button>
+              </span>
             </div>
           ))
         )}
+        <div className="hint" style={{ marginBottom: 0 }}>Niet-actieve medewerkers krijgen geen mails en worden niet ingepland.</div>
       </div>
 
       {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
@@ -228,10 +261,20 @@ export default function ShopmanagerPeople({ shopId }) {
       {editor && (
         <div style={ovl} onClick={() => setEditor(null)}>
           <div style={dlg} onClick={(ev) => ev.stopPropagation()}>
-            <h3 style={{ marginBottom: 12 }}>
-              {editor.mode === 'add' ? 'Nieuw' : 'Bewerk'}{' '}
-              {editor.kind === 'ondernemer' ? 'ondernemer' : 'medewerker'}
-            </h3>
+            <h3 style={{ marginBottom: 12 }}>{editor.mode === 'add' ? 'Nieuwe persoon' : 'Bewerken'}</h3>
+
+            {editor.mode === 'add' ? (
+              <>
+                <label className="flbl">Type</label>
+                <select className="input fw" value={editor.role} onChange={(e) => setEditor({ ...editor, role: e.target.value })}>
+                  <option value="ondernemer">Ondernemer</option>
+                  <option value="flexi">Flexi</option>
+                  <option value="jobstudent">Jobstudent</option>
+                </select>
+              </>
+            ) : (
+              <div className="muted" style={{ marginBottom: 4 }}>{ROLE_LABEL[editor.role] || editor.role}</div>
+            )}
 
             <label className="flbl">Voornaam</label>
             <input className="input fw" value={editor.first_name} onChange={(e) => setEditor({ ...editor, first_name: e.target.value })} />
@@ -242,31 +285,43 @@ export default function ShopmanagerPeople({ shopId }) {
             <label className="flbl">E-mail</label>
             <input className="input fw" type="email" value={editor.email} onChange={(e) => setEditor({ ...editor, email: e.target.value })} />
 
-            {editor.kind === 'ondernemer' ? (
+            {isOnd ? (
               <>
                 <label className="flbl">Bedrijfsnaam</label>
                 <input className="input fw" value={editor.company_name} onChange={(e) => setEditor({ ...editor, company_name: e.target.value })} />
+
                 <div className="row-item" style={{ marginTop: 8 }}>
-                  <span>Uitbatingsplicht (1 dag/maand)</span>
+                  <span>Uitbatingsplicht</span>
                   <button className={'sw' + (editor.must_operate ? ' on' : '')} onClick={() => setEditor({ ...editor, must_operate: !editor.must_operate })} aria-label="Uitbatingsplicht">
                     <span className="knob" />
                   </button>
                 </div>
+
+                {editor.must_operate && (
+                  <>
+                    <label className="flbl">Aantal uitbatingsdagen in deze winkel</label>
+                    <input className="input" type="number" min="1" max="20" style={{ width: 90 }}
+                      value={editor.operate_days} onChange={(e) => setEditor({ ...editor, operate_days: e.target.value })} />
+                  </>
+                )}
+
+                <label className="flbl">Actief vanaf</label>
+                <input className="input fw" type="date" value={editor.start_date} onChange={(e) => setEditor({ ...editor, start_date: e.target.value })} />
+
+                <label className="flbl">Gestopt op (leeg = nog actief)</label>
+                <input className="input fw" type="date" value={editor.end_date} onChange={(e) => setEditor({ ...editor, end_date: e.target.value })} />
               </>
             ) : (
-              <>
-                <label className="flbl">Rol</label>
-                <select className="input fw" value={editor.role} onChange={(e) => setEditor({ ...editor, role: e.target.value })}>
-                  <option value="flexi">Flexi</option>
-                  <option value="jobstudent">Jobstudent</option>
-                </select>
-              </>
+              <div className="row-item" style={{ marginTop: 8 }}>
+                <span>Actief</span>
+                <button className={'sw' + (editor.active ? ' on' : '')} onClick={() => setEditor({ ...editor, active: !editor.active })} aria-label="Actief">
+                  <span className="knob" />
+                </button>
+              </div>
             )}
 
             {editor.mode === 'add' && (
-              <div className="hint" style={{ marginTop: 10 }}>
-                De persoon kan inloggen zodra zijn/haar account gekoppeld is.
-              </div>
+              <div className="hint" style={{ marginTop: 10 }}>De persoon kan inloggen zodra zijn/haar account gekoppeld is.</div>
             )}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
@@ -295,6 +350,6 @@ const ovl = {
 }
 const dlg = {
   background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 16,
-  padding: '22px', maxWidth: 380, width: '100%', maxHeight: '85vh', overflowY: 'auto',
+  padding: '22px', maxWidth: 380, width: '100%', maxHeight: '88vh', overflowY: 'auto',
   boxShadow: '0 16px 40px rgba(42, 37, 33, 0.18)',
 }

@@ -33,6 +33,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
   const [byDate, setByDate] = useState({})
   const [shiftIdByDate, setShiftIdByDate] = useState({})
   const [pub, setPub] = useState(null)
+  const [bonusInfo, setBonusInfo] = useState(null)
   const [subStatus, setSubStatus] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -102,6 +103,10 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         .eq('month_start', monthStart)
         .maybeSingle()
       setPub(p || null)
+
+      const { data: bonusRows } = await supabase.rpc('bonus_for_month', { p_month: monthStart })
+      const br = (bonusRows || []).find((r) => r.shop_id === shopId)
+      setBonusInfo(br ? { aantal: br.aantal, drempel: br.drempel } : null)
 
       // Wie moet nog beschikbaarheden doorgeven? (ondernemers van deze winkel)
       const { data: es } = await supabase
@@ -310,6 +315,12 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
               <div className="lbl">Leeg</div>
             </div>
           </div>
+
+          {bonusInfo && (
+            <div className="hint" style={{ textAlign: 'center', marginTop: -6, marginBottom: 14 }}>
+              Bonus-indicatie: {bonusInfo.aantal} uitbatende/afkopende ondernemers · drempel {bonusInfo.drempel} (gemiddelde openingsdagen)
+            </div>
+          )}
 
           <div className="card">
             <div className="weekhead">

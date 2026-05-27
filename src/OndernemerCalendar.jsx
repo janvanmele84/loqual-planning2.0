@@ -52,7 +52,7 @@ export default function OndernemerCalendar({ employee, onLogout }) {
     try {
       const { data: es } = await supabase
         .from('entrepreneur_shops')
-        .select('shop_id, must_operate, start_date, end_date, shops(name)')
+        .select('shop_id, must_operate, operate_days, start_date, end_date, shops(name)')
         .eq('entrepreneur_id', employee.id)
 
       const activeShops = (es || []).filter(
@@ -62,6 +62,7 @@ export default function OndernemerCalendar({ employee, onLogout }) {
         shop_id: r.shop_id,
         name: r.shops?.name || 'Winkel',
         must_operate: r.must_operate,
+        operate_days: r.operate_days || 1,
       }))
       setShops(shopList)
       const shopIds = shopList.map((s) => s.shop_id)
@@ -108,7 +109,9 @@ export default function OndernemerCalendar({ employee, onLogout }) {
       const boSet = new Set((bo || []).map((r) => r.shop_id))
       setBuyouts(boSet)
 
-      const nOperating = shopList.filter((s) => s.must_operate && !boSet.has(s.shop_id)).length
+      const nOperating = shopList
+        .filter((s) => s.must_operate && !boSet.has(s.shop_id))
+        .reduce((sum, s) => sum + (s.operate_days || 1), 0)
       const { data: req } = await supabase.rpc('required_availability', { n_operating_shops: nOperating })
       setRequired(req || 0)
     } catch (e) {
