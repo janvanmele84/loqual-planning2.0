@@ -32,10 +32,12 @@ export default function WorkerCalendar({ employee, onLogout }) {
   const [month, setMonth] = useState(thisMonth)
   const [shops, setShops] = useState([])
   const [prefShops, setPrefShops] = useState([])
+  const [lockedShops, setLockedShops] = useState(new Set())
   const [openSet, setOpenSet] = useState(new Set())
   const [days, setDays] = useState(new Set())
   const [lockedDays, setLockedDays] = useState(new Set())
   const [maxDays, setMaxDays] = useState(0)
+  const [lockedMaxDays, setLockedMaxDays] = useState(0)
   const [submission, setSubmission] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -100,6 +102,8 @@ export default function WorkerCalendar({ employee, onLogout }) {
       setDays(dd)
       setLockedDays(sub?.confirmed_at ? new Set(dd) : new Set())
       setPrefShops(prefs)
+      setLockedShops(sub?.confirmed_at ? new Set(prefs) : new Set())
+      setLockedMaxDays(sub?.confirmed_at ? (sub?.max_extra_days ?? 0) : 0)
     } catch (e) {
       setMsg({ kind: 'err', text: 'Laden mislukt. Probeer opnieuw.' })
     } finally {
@@ -182,7 +186,16 @@ export default function WorkerCalendar({ employee, onLogout }) {
   }
 
   async function toggleShop(shopId) {
-    if (locked) return
+    if (locked) {
+      if (lockedShops.has(shopId)) {
+        setMsg({ kind: 'err', text: 'Deze winkel is bevestigd en kan niet meer worden uitgevinkt.' })
+        return
+      }
+      // nieuwe winkel: in het geheugen aan/uit tot je ze toevoegt
+      setPrefShops((prev) => (prev.includes(shopId) ? prev.filter((id) => id !== shopId) : [...prev, shopId]))
+      setMsg(null)
+      return
+    }
     const order = prefShops.includes(shopId)
       ? prefShops.filter((id) => id !== shopId)
       : [...prefShops, shopId]
@@ -195,6 +208,14 @@ export default function WorkerCalendar({ employee, onLogout }) {
       setPrefShops(prefShops)
       setMsg({ kind: 'err', text: 'Winkelvoorkeur opslaan mislukt.' })
     }
+  }
+
+  function onMaxBlur() {
+    if (locked) {
+      if ((Number(maxDays) || 0) < lockedMaxDays) setMaxDays(lockedMaxDays)
+      return
+    }
+    saveMaxDays()
   }
 
   async function saveMaxDays() {
@@ -237,7 +258,9 @@ export default function WorkerCalendar({ employee, onLogout }) {
       if (error) throw error
       setSubmission(data)
       setLockedDays(new Set(days))
-      setMsg({ kind: 'good', text: 'Bevestigd. Je kunt nog extra dagen toevoegen, maar niet meer verwijderen.' })
+      setLockedShops(new Set(prefShops))
+      setLockedMaxDays(Number(maxDays) || 0)
+      setMsg({ kind: 'good', text: 'Bevestigd. Je kunt nog extra dagen, winkels en werkdagen toevoegen, maar niets verwijderen.' })
     } catch (e) {
       setMsg({ kind: 'err', text: 'Bevestigen mislukt.' })
     } finally {
@@ -247,16 +270,34 @@ export default function WorkerCalendar({ employee, onLogout }) {
 
   async function doAddExtra() {
     setDialog(null)
-    const pending = [...days].filter((d) => !lockedDays.has(d))
-    if (!pending.length) return
+    const pendingDays = [...days].filter((d) => !lockedDays.has(d))
+    const pendingShops = prefShops.filter((id) => !lockedShops.has(id))
+    const maxRaised = (Number(maxDays) || 0) > lockedMaxDays
+    if (!pendingDays.length && !pendingShops.length && !maxRaised) return
     setBusy(true)
     try {
       const sub = await ensureSubmission()
-      await supabase
-        .from('availability_days')
-        .insert(pending.map((d) => ({ submission_id: sub.id, day: d, kind: 'work' })))
-      setLockedDays((prev) => new Set([...prev, ...pending]))
-      setMsg({ kind: 'good', text: `${pending.length} extra ${pending.length === 1 ? 'dag' : 'dagen'} toegevoegd.` })
+      if (pendingDays.length) {
+        const { error } = await supabase
+          .from('availability_days')
+          .insert(pendingDays.map((d) => ({ submission_id: sub.id, day: d, kind: 'work' })))
+        if (error) throw error
+      }
+      if (pendingShops.length) {
+        const base = lockedShops.size
+        const { error } = await supabase
+          .from('availability_shop_prefs')
+          .insert(pendingShops.map((shopId, i) => ({ submission_id: sub.id, shop_id: shopId, rank: base + i + 1 })))
+        if (error) throw error
+      }
+      if (maxRaised) {
+        const { error } = await supabase.rpc('increase_max_extra_days', { p_submission: sub.id, p_value: Number(maxDays) || 0 })
+        if (error) throw error
+      }
+      setLockedDays((prev) => new Set([...prev, ...pendingDays]))
+      setLockedShops((prev) => new Set([...prev, ...pendingShops]))
+      if (maxRaised) setLockedMaxDays(Number(maxDays) || 0)
+      setMsg({ kind: 'good', text: 'Je toevoegingen zijn opgeslagen.' })
     } catch (e) {
       setMsg({ kind: 'err', text: 'Toevoegen mislukt.' })
     } finally {
@@ -266,7 +307,10 @@ export default function WorkerCalendar({ employee, onLogout }) {
 
   const canPrev = month > thisMonth
   const canNext = month < addMonths(thisMonth, 2)
-  const pendingCount = [...days].filter((d) => !lockedDays.has(d)).length
+  const pendingDayCount = [...days].filter((d) => !lockedDays.has(d)).length
+  const pendingShopCount = prefShops.filter((id) => !lockedShops.has(id)).length
+  const maxRaisedPending = locked && (Number(maxDays) || 0) > lockedMaxDays
+  const hasPending = pendingDayCount > 0 || pendingShopCount > 0 || maxRaisedPending
 
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
   const blanks = leadingBlanks(month)
@@ -311,14 +355,18 @@ export default function WorkerCalendar({ employee, onLogout }) {
             <input
               className="input"
               type="number"
-              min="0"
+              min={locked ? lockedMaxDays : 0}
               max="31"
               style={{ width: 110 }}
               value={maxDays}
-              disabled={locked}
               onChange={(e) => setMaxDays(e.target.value)}
-              onBlur={saveMaxDays}
+              onBlur={onMaxBlur}
             />
+            {locked && (
+              <div className="hint" style={{ marginBottom: 0 }}>
+                Je kunt dit aantal enkel nog optrekken (minimaal {lockedMaxDays}), niet verlagen.
+              </div>
+            )}
           </div>
 
           <div className="card">
@@ -329,16 +377,21 @@ export default function WorkerCalendar({ employee, onLogout }) {
             {shops.map((s) => {
               const rank = prefShops.indexOf(s.id)
               const on = rank >= 0
+              const isLocked = lockedShops.has(s.id)
+              const isPending = on && locked && !isLocked
               return (
                 <div className="row-item" key={s.id}>
                   <span>
                     {on && <strong style={{ color: 'var(--clay)', marginRight: 6 }}>{rank + 1}.</strong>}
                     {s.name}
+                    {isPending && (
+                      <span className="hint" style={{ marginLeft: 8, color: 'var(--clay)' }}>nog toe te voegen</span>
+                    )}
                   </span>
                   <button
                     className={'sw' + (on ? ' on' : '')}
                     onClick={() => toggleShop(s.id)}
-                    disabled={locked}
+                    disabled={locked && isLocked}
                     aria-label={s.name}
                   >
                     <span className="knob" />
@@ -400,20 +453,20 @@ export default function WorkerCalendar({ employee, onLogout }) {
             >
               {busy ? 'Bezig…' : 'Bevestigen'}
             </button>
-          ) : pendingCount > 0 ? (
+          ) : hasPending ? (
             <button
               className="btn btn-primary btn-block"
               style={{ marginTop: 16 }}
               onClick={() => setDialog('extra')}
               disabled={busy}
             >
-              {busy ? 'Bezig…' : `Extra ${pendingCount === 1 ? 'dag' : 'dagen'} toevoegen (${pendingCount})`}
+              {busy ? 'Bezig…' : 'Wijzigingen toevoegen'}
             </button>
           ) : null}
 
           <div className="hint" style={{ textAlign: 'center' }}>
             {locked
-              ? 'Je doorgave staat vast. Nieuwe dagen kun je nog vrij aanklikken en toevoegen; bevestigde dagen (●) niet meer verwijderen.'
+              ? 'Je doorgave staat vast. Je kunt nog extra dagen, winkels en een hoger maximum toevoegen; bevestigde keuzes (●) kun je niet meer verwijderen.'
               : 'Je keuzes worden automatisch bewaard.'}
           </div>
           {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
@@ -422,11 +475,11 @@ export default function WorkerCalendar({ employee, onLogout }) {
 
       <ConfirmDialog
         open={dialog !== null}
-        title={dialog === 'extra' ? 'Extra dagen toevoegen?' : 'Beschikbaarheden bevestigen?'}
+        title={dialog === 'extra' ? 'Wijzigingen toevoegen?' : 'Beschikbaarheden bevestigen?'}
         message={
           dialog === 'extra'
-            ? 'Deze extra dagen worden definitief toegevoegd en kun je nadien niet meer verwijderen. Toevoegen?'
-            : 'Als je bevestigt, kun je je doorgegeven dagen niet meer wijzigen of verwijderen — toevoegen kan nog wel. Dit kun je niet ongedaan maken. Ben je zeker?'
+            ? 'Je extra dagen, winkels en/of hoger maximum worden definitief toegevoegd. Verwijderen of verlagen kan nadien niet meer. Toevoegen?'
+            : 'Als je bevestigt, kun je je doorgegeven dagen, winkels en maximum niet meer verwijderen of verlagen — toevoegen of optrekken kan nog wel. Dit kun je niet ongedaan maken. Ben je zeker?'
         }
         confirmLabel={dialog === 'extra' ? 'Ja, toevoegen' : 'Ja, bevestigen'}
         onConfirm={dialog === 'extra' ? doAddExtra : doConfirm}
