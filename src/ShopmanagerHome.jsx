@@ -4,6 +4,7 @@ import Shell from './Shell.jsx'
 import ShopmanagerPlanning from './ShopmanagerPlanning.jsx'
 import ShopmanagerShop from './ShopmanagerShop.jsx'
 import ShopmanagerPeople from './ShopmanagerPeople.jsx'
+import ShopmanagerAvailability from './ShopmanagerAvailability.jsx'
 import BonusOverview from './BonusOverview.jsx'
 
 export default function ShopmanagerHome({ employee, onLogout }) {
@@ -87,6 +88,9 @@ export default function ShopmanagerHome({ employee, onLogout }) {
         <button className={'tab' + (tab === 'mensen' ? ' active' : '')} onClick={() => setTab('mensen')}>
           Mensen
         </button>
+        <button className={'tab' + (tab === 'beschikbaarheden' ? ' active' : '')} onClick={() => setTab('beschikbaarheden')}>
+          Beschikbaarheden
+        </button>
         <button className={'tab' + (tab === 'bonus' ? ' active' : '')} onClick={() => setTab('bonus')}>
           Bonus
         </button>
@@ -98,6 +102,8 @@ export default function ShopmanagerHome({ employee, onLogout }) {
         <ShopmanagerShop key={'w-' + shopId} employee={employee} shopId={shopId} />
       ) : tab === 'mensen' ? (
         <ShopmanagerPeople key={'m-' + shopId} shopId={shopId} />
+      ) : tab === 'beschikbaarheden' ? (
+        <ShopmanagerAvailability key={'b-' + shopId} shopId={shopId} />
       ) : (
         <BonusOverview filterManagerId={employee.id} />
       )}
