@@ -324,7 +324,7 @@ export default function OndernemerCalendar({ employee, onLogout }) {
                     className={
                       'day' +
                       (!openSet.has(c.str) ? ' closed' : '') +
-                      (days.has(c.str) ? ' sel' : '') +
+                      (days.has(c.str) ? (locked && !lockedDays.has(c.str) ? ' pending' : ' sel') : '') +
                       (c.isToday ? ' today' : '')
                     }
                     onClick={() => toggleDay(c.str)}
@@ -345,6 +345,11 @@ export default function OndernemerCalendar({ employee, onLogout }) {
               <span className="item">
                 <span className="sw" style={{ boxShadow: 'inset 0 0 0 2px var(--clay)' }} /> Vandaag
               </span>
+              {locked && (
+                <span className="item">
+                  <span className="sw" style={{ background: 'var(--clay-soft)' }} /> Nog toe te voegen
+                </span>
+              )}
             </div>
           </div>
 

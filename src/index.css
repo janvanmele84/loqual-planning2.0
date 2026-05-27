@@ -15,6 +15,8 @@
   --paid-bg: #dbeaf0;
   --warn: #9a6212;
   --warn-bg: #f6e7cc;
+  --danger: #a3302b;
+  --danger-bg: #f1dcd7;
   --radius: 12px;
   --radius-sm: 8px;
 }
@@ -145,3 +147,45 @@ button { font-family: inherit; }
 .input:focus { outline: none; border-color: var(--clay); box-shadow: 0 0 0 3px var(--clay-soft); }
 
 .placeholder-art { font-family: 'Fraunces', serif; font-size: 40px; color: var(--clay); margin-bottom: 10px; }
+
+/* Net-aangeklikte, nog niet vastgezette dagen (na bevestigen) */
+.day.pending {
+  background: var(--clay-soft);
+  color: var(--clay-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* Shopmanager-planningsrooster */
+.pgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.pcell {
+  min-height: 56px; border: 1px solid var(--line); background: var(--surface);
+  border-radius: var(--radius-sm); padding: 5px 6px; position: relative;
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+}
+.pcell .num { font-size: 10px; color: var(--muted); }
+.pcell .nm { font-weight: 600; font-size: 13px; line-height: 1.2; }
+.pcell.blank { border: none; background: transparent; }
+.pcell.closed { background: var(--surface-2); border-color: transparent; }
+.pcell.closed .num { color: #b7ac99; }
+.pcell.ok { background: var(--avail-bg); border-color: transparent; cursor: pointer; }
+.pcell.ok .nm { color: var(--avail); }
+.pcell.paid { background: var(--paid-bg); border-color: transparent; cursor: pointer; }
+.pcell.paid .nm { color: var(--paid); }
+.pcell.empty { background: var(--danger-bg); border-color: transparent; cursor: pointer; }
+.pcell.empty .nm { color: var(--danger); font-weight: 500; font-style: italic; }
+.pcell.today { box-shadow: inset 0 0 0 2px var(--clay); }
+.pcell .mark { position: absolute; top: 4px; right: 5px; font-size: 10px; opacity: 0.75; }
+
+.metrics { display: flex; gap: 10px; margin-bottom: 16px; }
+.metric { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; text-align: center; }
+.metric .val { font-family: 'Fraunces', serif; font-size: 22px; color: var(--ink); }
+.metric .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.pill { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); padding: 7px 14px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.pill.active { background: var(--clay); border-color: var(--clay); color: #fff; }
+
+.pubbadge { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 999px; margin-bottom: 14px; }
+.pubbadge.confirmed { background: var(--warn-bg); color: var(--warn); }
+.pubbadge.published { background: var(--avail-bg); color: var(--avail); }

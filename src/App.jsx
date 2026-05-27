@@ -5,6 +5,7 @@ import Shell from './Shell.jsx'
 import Placeholder from './Placeholder.jsx'
 import OndernemerCalendar from './OndernemerCalendar.jsx'
 import WorkerCalendar from './WorkerCalendar.jsx'
+import ShopmanagerPlanning from './ShopmanagerPlanning.jsx'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -63,6 +64,9 @@ export default function App() {
   }
   if (employee.role === 'flexi' || employee.role === 'jobstudent') {
     return <WorkerCalendar employee={employee} onLogout={logout} />
+  }
+  if (employee.role === 'shopmanager') {
+    return <ShopmanagerPlanning employee={employee} onLogout={logout} />
   }
   return <Placeholder employee={employee} onLogout={logout} />
 }

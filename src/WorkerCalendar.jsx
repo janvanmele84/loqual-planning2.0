@@ -365,7 +365,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
                     className={
                       'day' +
                       (!openSet.has(c.str) ? ' closed' : '') +
-                      (days.has(c.str) ? ' sel' : '') +
+                      (days.has(c.str) ? (locked && !lockedDays.has(c.str) ? ' pending' : ' sel') : '') +
                       (c.isToday ? ' today' : '')
                     }
                     onClick={() => toggleDay(c.str)}
@@ -383,6 +383,11 @@ export default function WorkerCalendar({ employee, onLogout }) {
               <span className="item">
                 <span className="sw" style={{ background: 'var(--surface-2)' }} /> Gesloten
               </span>
+              {locked && (
+                <span className="item">
+                  <span className="sw" style={{ background: 'var(--clay-soft)' }} /> Nog toe te voegen
+                </span>
+              )}
             </div>
           </div>
 
