@@ -41,6 +41,7 @@ export default function OndernemerCalendar({ employee, onLogout }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [dialog, setDialog] = useState(null) // null | 'confirm' | 'extra'
+  const [released, setReleased] = useState(true)
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -58,12 +59,28 @@ export default function OndernemerCalendar({ employee, onLogout }) {
       const activeShops = (es || []).filter(
         (r) => r.start_date <= monthEnd && (!r.end_date || r.end_date >= monthStart),
       )
-      const shopList = activeShops.map((r) => ({
-        shop_id: r.shop_id,
-        name: r.shops?.name || 'Winkel',
-        must_operate: r.must_operate,
-        operate_days: r.operate_days || 1,
-      }))
+      const allShopIds = [...new Set(activeShops.map((r) => r.shop_id))]
+
+      // Welke van zijn winkels gaven deze maand vrij?
+      let releasedIds = new Set()
+      if (allShopIds.length) {
+        const { data: rel } = await supabase
+          .from('shop_availability_release')
+          .select('shop_id')
+          .eq('month_start', monthStart)
+          .in('shop_id', allShopIds)
+        releasedIds = new Set((rel || []).map((r) => r.shop_id))
+      }
+      setReleased(releasedIds.size > 0)
+
+      const shopList = activeShops
+        .filter((r) => releasedIds.has(r.shop_id))
+        .map((r) => ({
+          shop_id: r.shop_id,
+          name: r.shops?.name || 'Winkel',
+          must_operate: r.must_operate,
+          operate_days: r.operate_days || 1,
+        }))
       setShops(shopList)
       const shopIds = shopList.map((s) => s.shop_id)
 
@@ -257,7 +274,7 @@ export default function OndernemerCalendar({ employee, onLogout }) {
   }
 
   const minMonth = thisMonth
-  const maxMonth = addMonths(thisMonth, 2)
+  const maxMonth = addMonths(thisMonth, 6)
   const canPrev = month > minMonth
   const meetsMin = days.size >= required
   const canNext = month < maxMonth && (meetsMin || openSet.size === 0)
@@ -295,6 +312,14 @@ export default function OndernemerCalendar({ employee, onLogout }) {
       {loading ? (
         <div className="muted" style={{ padding: 20, textAlign: 'center' }}>
           Laden…
+        </div>
+      ) : !released ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <div className="section-title">Nog niet vrijgegeven</div>
+          <div className="muted">
+            Deze maand is nog niet vrijgegeven door je winkel. Je kunt je beschikbaarheid hier nog niet ingeven —
+            kijk later terug of probeer een andere maand.
+          </div>
         </div>
       ) : (
         <>

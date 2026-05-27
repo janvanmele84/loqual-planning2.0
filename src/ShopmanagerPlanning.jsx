@@ -192,6 +192,10 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
 
   async function onCellClick(dateStr) {
     if (!openSet.has(dateStr)) return
+    if (dateStr < ymd(today)) {
+      setMsg({ kind: 'err', text: 'Dagen in het verleden kun je niet meer wijzigen.' })
+      return
+    }
     const a = byDate[dateStr]
     if (a) {
       setDialog({ kind: 'remove', id: a.id, name: a.name, date: dateStr })
@@ -353,10 +357,12 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     }
   }
 
-  const minMonth = addMonths(thisMonth, -1)
-  const maxMonth = addMonths(thisMonth, 3)
+  const minMonth = addMonths(thisMonth, -4)
+  const maxMonth = addMonths(thisMonth, 6)
   const canPrev = month > minMonth
   const canNext = month < maxMonth
+  const monthIsPast = month < thisMonth
+  const todayStr = ymd(today)
 
   const openCount = openSet.size
   const filled = Object.keys(byDate).length
@@ -426,13 +432,19 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                 if (c === null) return <div key={`b${i}`} className="pcell blank" />
                 const open = openSet.has(c.str)
                 const a = byDate[c.str]
+                const past = c.str < todayStr
                 let cls = 'pcell'
                 if (!open) cls += ' closed'
                 else if (!a) cls += ' empty'
                 else cls += a.kind === 'mandatory' ? ' ok' : ' paid'
                 if (c.isToday) cls += ' today'
                 return (
-                  <div key={c.str} className={cls} onClick={() => onCellClick(c.str)}>
+                  <div
+                    key={c.str}
+                    className={cls}
+                    style={past ? { opacity: 0.5, cursor: 'default' } : undefined}
+                    onClick={() => onCellClick(c.str)}
+                  >
                     <span className="num">{c.d}</span>
                     {open && <span className="nm">{a ? a.name : 'leeg'}</span>}
                     {a?.origin_shop_id ? (
@@ -465,7 +477,11 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
             </div>
           </div>
 
-          <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen.</div>
+          {monthIsPast ? (
+            <div className="hint">Deze maand is voorbij — alleen-lezen. Je ziet hier wie wanneer werkte; wijzigen kan niet meer.</div>
+          ) : (
+            <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen.</div>
+          )}
 
           {subStatus.length > 0 &&
             (() => {
@@ -492,6 +508,8 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
               )
             })()}
 
+          {!monthIsPast && (
+            <>
           <div className="card">
             <div className="section-title">Ondernemers die nog een dag zoeken</div>
             <div className="hint" style={{ marginTop: 0 }}>
@@ -571,6 +589,8 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
             Publiceren mag ook met lege dagen. Vul je ze later in, dan publiceer je gewoon opnieuw — de betrokkenen
             krijgen dan een update.
           </div>
+            </>
+          )}
 
           {msg && (
             <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>
