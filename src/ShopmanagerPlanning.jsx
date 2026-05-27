@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
-import Shell from './Shell.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
@@ -25,13 +24,10 @@ function leadingBlanks(date) {
   return (new Date(date.getFullYear(), date.getMonth(), 1).getDay() + 6) % 7
 }
 
-export default function ShopmanagerPlanning({ employee, onLogout }) {
+export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
   const today = new Date()
   const thisMonth = firstOfMonth(today)
 
-  const [managedShops, setManagedShops] = useState([])
-  const [shopsMap, setShopsMap] = useState({})
-  const [shopId, setShopId] = useState(null)
   const [month, setMonth] = useState(addMonths(thisMonth, 1))
   const [openSet, setOpenSet] = useState(new Set())
   const [byDate, setByDate] = useState({})
@@ -41,36 +37,12 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
-  const [dialog, setDialog] = useState(null) // null | {kind:'remove',...} | {kind:'confirmplan'}
+  const [dialog, setDialog] = useState(null) // null | {kind:'remove',...} | {kind:'publish'}
   const [picker, setPicker] = useState(null) // null | {date, loading, candidates}
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
 
-  // Eenmalig: beheerde winkels + namenlijst van alle winkels (voor herverdeling-labels)
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      const { data: allShops } = await supabase.from('shops').select('id, name')
-      const map = {}
-      ;(allShops || []).forEach((s) => (map[s.id] = s.name))
-
-      const { data: ms } = await supabase
-        .from('shopmanager_shops')
-        .select('shop_id')
-        .eq('manager_id', employee.id)
-      const managed = (ms || []).map((r) => ({ id: r.shop_id, name: map[r.shop_id] || 'Winkel' }))
-
-      if (!active) return
-      setShopsMap(map)
-      setManagedShops(managed)
-      setShopId((cur) => cur || managed[0]?.id || null)
-      if (!managed.length) setLoading(false)
-    })()
-    return () => {
-      active = false
-    }
-  }, [employee.id])
 
   const loadPlanning = useCallback(async () => {
     if (!shopId) return
@@ -213,8 +185,7 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
       if (error) throw error
       setPicker({ date: dateStr, loading: false, candidates: data || [] })
     } catch (e) {
-      setPicker(null)
-      setMsg({ kind: 'err', text: 'Beschikbare medewerkers laden mislukt.' })
+      setPicker({ date: dateStr, loading: false, candidates: [], error: e?.message || String(e) })
     }
   }
 
@@ -302,38 +273,8 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
     cells.push({ d, str: ymd(dateObj), isToday: ymd(dateObj) === ymd(today) })
   }
 
-  if (!loading && managedShops.length === 0) {
-    return (
-      <Shell employee={employee} onLogout={onLogout}>
-        <div className="card" style={{ textAlign: 'center', padding: '36px 24px' }}>
-          <h2 style={{ marginBottom: 8 }}>Nog geen winkel</h2>
-          <p className="muted">Er is nog geen winkel aan jou gekoppeld als shopmanager. Vraag de admin om je toe te wijzen.</p>
-        </div>
-      </Shell>
-    )
-  }
-
   return (
-    <Shell employee={employee} onLogout={onLogout}>
-      {managedShops.length > 1 && (
-        <div className="pills">
-          {managedShops.map((s) => (
-            <button
-              key={s.id}
-              className={'pill' + (s.id === shopId ? ' active' : '')}
-              onClick={() => setShopId(s.id)}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-      )}
-      {managedShops.length === 1 && (
-        <div className="section-title" style={{ marginBottom: 12 }}>
-          {managedShops[0].name}
-        </div>
-      )}
-
+    <>
       <div className="monthnav">
         <button className="icon-btn" onClick={() => canPrev && setMonth(addMonths(month, -1))} disabled={!canPrev}>
           ‹
@@ -496,6 +437,8 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
             <p className="muted" style={{ margin: '0 0 14px' }}>{picker.date}</p>
             {picker.loading ? (
               <div className="muted">Laden…</div>
+            ) : picker.error ? (
+              <p style={{ color: 'var(--danger)', fontSize: 14 }}>Kon de lijst niet laden: {picker.error}</p>
             ) : picker.candidates.length === 0 ? (
               <p className="muted">Niemand gaf deze dag op als beschikbaar voor deze winkel.</p>
             ) : (
@@ -514,7 +457,7 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
           </div>
         </div>
       )}
-    </Shell>
+    </>
   )
 }
 

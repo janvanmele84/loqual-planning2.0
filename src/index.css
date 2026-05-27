@@ -195,3 +195,13 @@ button { font-family: inherit; }
 .tag.bevestigd { background: var(--avail-bg); color: var(--avail); }
 .tag.bezig { background: var(--warn-bg); color: var(--warn); }
 .tag.niet { background: var(--danger-bg); color: var(--danger); }
+
+/* Tabbladen (shopmanager) */
+.tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+.tab {
+  border: none; background: transparent; padding: 9px 16px; cursor: pointer;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--clay-ink); border-bottom-color: var(--clay); }
