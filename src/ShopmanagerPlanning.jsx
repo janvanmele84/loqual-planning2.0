@@ -32,7 +32,7 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
   const [managedShops, setManagedShops] = useState([])
   const [shopsMap, setShopsMap] = useState({})
   const [shopId, setShopId] = useState(null)
-  const [month, setMonth] = useState(thisMonth)
+  const [month, setMonth] = useState(addMonths(thisMonth, 1))
   const [openSet, setOpenSet] = useState(new Set())
   const [byDate, setByDate] = useState({})
   const [pub, setPub] = useState(null)
@@ -90,10 +90,17 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
       const map = {}
       const shiftIds = shiftRows.map((s) => s.id)
       if (shiftIds.length) {
-        const { data: asgs } = await supabase
+        const { data: asgs, error: asgErr } = await supabase
           .from('assignments')
-          .select('id, shift_id, kind, status, origin_shop_id, employees(first_name)')
+          .select('id, shift_id, employee_id, kind, status, origin_shop_id')
           .in('shift_id', shiftIds)
+        if (asgErr) throw asgErr
+        const empIds = [...new Set((asgs || []).map((a) => a.employee_id))]
+        const nameById = {}
+        if (empIds.length) {
+          const { data: emps } = await supabase.from('employees').select('id, first_name').in('id', empIds)
+          ;(emps || []).forEach((e) => (nameById[e.id] = e.first_name))
+        }
         ;(asgs || []).forEach((a) => {
           const d = dateByShift[a.shift_id]
           if (d) {
@@ -102,7 +109,7 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
               kind: a.kind,
               status: a.status,
               origin_shop_id: a.origin_shop_id,
-              name: a.employees?.first_name || '—',
+              name: nameById[a.employee_id] || '—',
             }
           }
         })
@@ -173,11 +180,11 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
     try {
       const { data, error } = await supabase.rpc('shuffle_month', { p_shop: shopId, p_month: monthStart })
       if (error) throw error
+      await loadPlanning()
       const unplaceable = data?.niet_inplanbare_ondernemers || []
       let text = `Ingepland: ${data?.toegewezen ?? 0} · nog leeg: ${data?.nog_leeg ?? 0}`
-      if (unplaceable.length) text += ` · ${unplaceable.length} niet inplanbaar (zie rode dagen / conflicten)`
-      setMsg({ kind: unplaceable.length ? 'warn' : 'good', text })
-      await loadPlanning()
+      if (unplaceable.length) text += ` · ${unplaceable.length} niet inplanbaar (zie rode dagen)`
+      setMsg({ kind: 'good', text })
     } catch (e) {
       setMsg({ kind: 'err', text: 'Shuffle mislukt.' })
     } finally {
