@@ -77,33 +77,36 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
     try {
       const { data: sh } = await supabase
         .from('shifts')
-        .select('shift_date')
+        .select('id, shift_date')
         .eq('shop_id', shopId)
         .eq('kind', 'standard')
         .gte('shift_date', monthStart)
         .lte('shift_date', monthEnd)
-      setOpenSet(new Set((sh || []).map((r) => r.shift_date)))
+      const shiftRows = sh || []
+      const dateByShift = {}
+      shiftRows.forEach((s) => (dateByShift[s.id] = s.shift_date))
+      setOpenSet(new Set(shiftRows.map((s) => s.shift_date)))
 
-      const { data: asgs } = await supabase
-        .from('assignments')
-        .select('id, kind, status, origin_shop_id, shifts!inner(shift_date, shop_id, kind), employees(first_name)')
-        .eq('shifts.shop_id', shopId)
-        .eq('shifts.kind', 'standard')
-        .gte('shifts.shift_date', monthStart)
-        .lte('shifts.shift_date', monthEnd)
       const map = {}
-      ;(asgs || []).forEach((a) => {
-        const d = a.shifts?.shift_date
-        if (d) {
-          map[d] = {
-            id: a.id,
-            kind: a.kind,
-            status: a.status,
-            origin_shop_id: a.origin_shop_id,
-            name: a.employees?.first_name || '—',
+      const shiftIds = shiftRows.map((s) => s.id)
+      if (shiftIds.length) {
+        const { data: asgs } = await supabase
+          .from('assignments')
+          .select('id, shift_id, kind, status, origin_shop_id, employees(first_name)')
+          .in('shift_id', shiftIds)
+        ;(asgs || []).forEach((a) => {
+          const d = dateByShift[a.shift_id]
+          if (d) {
+            map[d] = {
+              id: a.id,
+              kind: a.kind,
+              status: a.status,
+              origin_shop_id: a.origin_shop_id,
+              name: a.employees?.first_name || '—',
+            }
           }
-        }
-      })
+        })
+      }
       setByDate(map)
 
       const { data: p } = await supabase
@@ -122,24 +125,35 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
       const activeEnt = (es || []).filter(
         (r) => r.start_date <= monthEnd && (!r.end_date || r.end_date >= monthStart),
       )
-      const entIds = activeEnt.map((r) => r.entrepreneur_id)
-      const subMap = {}
+      // ontdubbel: één rij per ondernemer (ze kunnen meerdere rijen hebben)
+      const byEnt = {}
+      activeEnt.forEach((r) => {
+        if (!byEnt[r.entrepreneur_id]) {
+          byEnt[r.entrepreneur_id] = {
+            id: r.entrepreneur_id,
+            name: [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ') || 'Onbekend',
+          }
+        }
+      })
+      const entList = Object.values(byEnt)
+      const entIds = entList.map((e) => e.id)
+      const confirmedSet = new Set()
       if (entIds.length) {
         const { data: subs } = await supabase
           .from('availability_submissions')
           .select('employee_id, confirmed_at')
           .in('employee_id', entIds)
           .eq('month_start', monthStart)
-        ;(subs || []).forEach((s) => (subMap[s.employee_id] = { has: true, confirmed: !!s.confirmed_at }))
+        ;(subs || []).forEach((s) => {
+          if (s.confirmed_at) confirmedSet.add(s.employee_id)
+        })
       }
-      const statusList = activeEnt.map((r) => {
-        const info = subMap[r.entrepreneur_id]
-        const naam =
-          [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ') || 'Onbekend'
-        return { name: naam, status: info?.confirmed ? 'bevestigd' : info?.has ? 'bezig' : 'niet' }
-      })
-      const order = { niet: 0, bezig: 1, bevestigd: 2 }
-      statusList.sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name))
+      const statusList = entList
+        .map((e) => ({ name: e.name, status: confirmedSet.has(e.id) ? 'bevestigd' : 'niet' }))
+        .sort((a, b) => {
+          if (a.status !== b.status) return a.status === 'niet' ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
       setSubStatus(statusList)
     } catch (e) {
       setMsg({ kind: 'err', text: 'Laden mislukt. Probeer opnieuw.' })
@@ -361,22 +375,30 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
 
           <div className="hint">Tik op een ingevulde dag om die toewijzing te verwijderen.</div>
 
-          {subStatus.length > 0 && (
-            <div className="card">
-              <div className="section-title">
-                Beschikbaarheden ondernemers ({subStatus.filter((s) => s.status === 'bevestigd').length}/
-                {subStatus.length} bevestigd)
-              </div>
-              {subStatus.map((s, i) => (
-                <div className="row-item" key={i}>
-                  <span>{s.name}</span>
-                  <span className={'tag ' + s.status}>
-                    {s.status === 'bevestigd' ? 'Bevestigd' : s.status === 'bezig' ? 'Bezig' : 'Niet doorgegeven'}
-                  </span>
+          {subStatus.length > 0 &&
+            (() => {
+              const confirmed = subStatus.filter((s) => s.status === 'bevestigd').map((s) => s.name)
+              const pending = subStatus.filter((s) => s.status === 'niet').map((s) => s.name)
+              return (
+                <div className="card">
+                  <div className="section-title">
+                    Beschikbaarheden ondernemers ({confirmed.length}/{subStatus.length} bevestigd)
+                  </div>
+                  <div style={{ marginBottom: 10 }}>
+                    <span className="tag niet">Nog niet doorgegeven ({pending.length})</span>
+                    <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>
+                      {pending.length ? pending.join(', ') : 'Iedereen heeft doorgegeven ✓'}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="tag bevestigd">Bevestigd ({confirmed.length})</span>
+                    <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>
+                      {confirmed.length ? confirmed.join(', ') : '—'}
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+              )
+            })()}
 
           <button
             className="btn btn-primary btn-block"
