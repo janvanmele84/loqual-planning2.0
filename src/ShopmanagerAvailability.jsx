@@ -141,6 +141,7 @@ export default function ShopmanagerAvailability({ shopId }) {
 
   async function toggleDay(personKind, person, kind, dayStr, currentlyOn) {
     if (busy || monthIsPast) return
+    const willBeOn = !currentlyOn
     setBusy(true); setMsg(null)
     try {
       let sid = person.submission_id
@@ -152,19 +153,31 @@ export default function ShopmanagerAvailability({ shopId }) {
         sid = data
       }
       const { error: e2 } = await supabase.rpc('manager_set_availability_day', {
-        p_submission: sid, p_day: dayStr, p_kind: kind, p_present: !currentlyOn,
+        p_submission: sid, p_day: dayStr, p_kind: kind, p_present: willBeOn,
       })
       if (e2) throw e2
-      await load()
+
       if (personKind === 'ond') {
-        const updated = ondernemers.find((o) => o.id === person.id)
-        if (updated) setEditing({ kind: 'ond', person: updated })
+        const newMan = new Set(person.mandatory)
+        const newExt = new Set(person.extra)
+        if (kind === 'mandatory') {
+          if (willBeOn) { newMan.add(dayStr); newExt.delete(dayStr) } else newMan.delete(dayStr)
+        } else if (kind === 'extra') {
+          if (willBeOn) { newExt.add(dayStr); newMan.delete(dayStr) } else newExt.delete(dayStr)
+        }
+        const updated = { ...person, submission_id: sid, mandatory: newMan, extra: newExt }
+        setOndernemers((prev) => prev.map((o) => (o.id === person.id ? updated : o)))
+        setEditing({ kind: 'ond', person: updated })
       } else {
-        const updated = werkers.find((w) => w.id === person.id)
-        if (updated) setEditing({ kind: 'werk', person: updated })
+        const newWork = new Set(person.work)
+        if (willBeOn) newWork.add(dayStr); else newWork.delete(dayStr)
+        const updated = { ...person, submission_id: sid, work: newWork }
+        setWerkers((prev) => prev.map((w) => (w.id === person.id ? updated : w)))
+        setEditing({ kind: 'werk', person: updated })
       }
     } catch (e) {
       setMsg({ kind: 'err', text: e?.message || 'Wijzigen mislukt.' })
+      await load()
     } finally {
       setBusy(false)
     }
