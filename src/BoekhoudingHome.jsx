@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
+import AdminExtraBuyout from './AdminExtraBuyout.jsx'
 
 const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
   'juli', 'augustus', 'september', 'oktober', 'november', 'december']
@@ -89,6 +90,9 @@ export default function BoekhoudingHome({ employee, onLogout }) {
         </button>
         <button className={'tab' + (tab === 'detail' ? ' active' : '')} onClick={() => setTab('detail')}>
           Detail per dag
+        </button>
+        <button className={'tab' + (tab === 'extra' ? ' active' : '')} onClick={() => setTab('extra')}>
+          Extra & afkoop
         </button>
       </div>
 
@@ -185,7 +189,7 @@ export default function BoekhoudingHome({ employee, onLogout }) {
             </>
           )}
         </div>
-      ) : (
+      ) : tab === 'detail' ? (
         <div className="card">
           <div className="section-title">Detail per dag — {monthLabel}</div>
           <div className="hint" style={{ marginTop: 0 }}>
@@ -229,6 +233,8 @@ export default function BoekhoudingHome({ employee, onLogout }) {
             </>
           )}
         </div>
+      ) : (
+        <AdminExtraBuyout />
       )}
     </Shell>
   )
