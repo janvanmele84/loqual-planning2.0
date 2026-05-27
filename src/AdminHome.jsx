@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Shell from './Shell.jsx'
 import AdminShops from './AdminShops.jsx'
 import AdminManagers from './AdminManagers.jsx'
+import AdminAccounts from './AdminAccounts.jsx'
 
 export default function AdminHome({ employee, onLogout }) {
   const [tab, setTab] = useState('winkels')
@@ -17,9 +18,12 @@ export default function AdminHome({ employee, onLogout }) {
         <button className={'tab' + (tab === 'managers' ? ' active' : '')} onClick={() => setTab('managers')}>
           Managers
         </button>
+        <button className={'tab' + (tab === 'accounts' ? ' active' : '')} onClick={() => setTab('accounts')}>
+          Accounts
+        </button>
       </div>
 
-      {tab === 'winkels' ? <AdminShops /> : <AdminManagers />}
+      {tab === 'winkels' ? <AdminShops /> : tab === 'managers' ? <AdminManagers /> : <AdminAccounts employee={employee} />}
     </Shell>
   )
 }
