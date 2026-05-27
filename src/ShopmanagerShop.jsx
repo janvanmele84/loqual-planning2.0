@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
+import ConfirmDialog from './ConfirmDialog.jsx'
 
 const DAYS = ['Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag', 'Zondag']
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
@@ -40,6 +41,9 @@ export default function ShopmanagerShop({ shopId }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [editor, setEditor] = useState(null) // null | {date, open, start, end, shiftId}
+  const [extra, setExtra] = useState([])
+  const [newExtra, setNewExtra] = useState({ date: '', start: '10:00', end: '18:00' })
+  const [dialog, setDialog] = useState(null) // null | {kind:'delExtra', id, label}
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -91,12 +95,28 @@ export default function ShopmanagerShop({ shopId }) {
     }
   }, [shopId, monthStart, monthEnd])
 
+  const loadExtra = useCallback(async () => {
+    if (!shopId) return
+    const { data } = await supabase
+      .from('shifts')
+      .select('id, shift_date, start_time, end_time')
+      .eq('shop_id', shopId)
+      .eq('kind', 'extra')
+      .gte('shift_date', monthStart)
+      .lte('shift_date', monthEnd)
+      .order('shift_date')
+    setExtra(data || [])
+  }, [shopId, monthStart, monthEnd])
+
   useEffect(() => {
     loadSettings()
   }, [loadSettings])
   useEffect(() => {
     loadMonth()
   }, [loadMonth])
+  useEffect(() => {
+    loadExtra()
+  }, [loadExtra])
 
   // ---- standaard uurrooster ----
   async function saveWeekday(wd, next) {
@@ -205,6 +225,49 @@ export default function ShopmanagerShop({ shopId }) {
     }
   }
 
+  async function addExtra() {
+    if (!newExtra.date) {
+      setMsg({ kind: 'err', text: 'Kies een datum voor de extra shift.' })
+      return
+    }
+    if (!(newExtra.end > newExtra.start)) {
+      setMsg({ kind: 'err', text: 'Het einduur moet na het beginuur liggen.' })
+      return
+    }
+    setBusy(true)
+    setMsg(null)
+    try {
+      const { error } = await supabase.from('shifts').insert({
+        shop_id: shopId, shift_date: newExtra.date, kind: 'extra',
+        start_time: newExtra.start, end_time: newExtra.end,
+      })
+      if (error) throw error
+      setNewExtra({ date: '', start: '10:00', end: '18:00' })
+      await loadExtra()
+      setMsg({ kind: 'good', text: 'Extra shift toegevoegd.' })
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Toevoegen mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doDeleteExtra() {
+    const d = dialog
+    setDialog(null)
+    if (!d?.id) return
+    setBusy(true)
+    try {
+      const { error } = await supabase.from('shifts').delete().eq('id', d.id)
+      if (error) throw error
+      await loadExtra()
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Verwijderen mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const canPrev = month > addMonths(thisMonth, -1)
   const canNext = month < addMonths(thisMonth, 3)
 
@@ -216,6 +279,7 @@ export default function ShopmanagerShop({ shopId }) {
     const dateObj = new Date(month.getFullYear(), month.getMonth(), d)
     cells.push({ d, str: ymd(dateObj), isToday: ymd(dateObj) === ymd(today) })
   }
+  const extraDates = new Set(extra.map((s) => s.shift_date))
 
   return (
     <>
@@ -298,6 +362,7 @@ export default function ShopmanagerShop({ shopId }) {
                   <span className="nm" style={{ fontWeight: 500 }}>
                     {s ? `${s.start}–${s.end}` : 'gesloten'}
                   </span>
+                  {extraDates.has(c.str) && <span className="mark" title="Extra shift">+</span>}
                 </div>
               )
             })}
@@ -309,6 +374,40 @@ export default function ShopmanagerShop({ shopId }) {
           </div>
         </div>
       )}
+
+      <div className="card">
+        <div className="section-title">Extra shiften in {MONTHS[month.getMonth()]}</div>
+        <div className="hint" style={{ marginTop: 0, marginBottom: 10 }}>
+          Een tweede shift bovenop de gewone openingsdag (bv. extra hulp of een speciale dag). Dagen met een extra
+          shift krijgen een <strong>+</strong> in de kalender.
+        </div>
+        {extra.length === 0 ? (
+          <div className="muted" style={{ marginBottom: 10 }}>Nog geen extra shiften deze maand.</div>
+        ) : (
+          extra.map((s) => (
+            <div className="row-item" key={s.id}>
+              <span>{s.shift_date} · {t5(s.start_time)}–{t5(s.end_time)}</span>
+              <button
+                className="btn"
+                style={{ padding: '5px 10px', fontSize: 13 }}
+                onClick={() => setDialog({ kind: 'delExtra', id: s.id, label: `${s.shift_date} (${t5(s.start_time)}–${t5(s.end_time)})` })}
+              >
+                Verwijderen
+              </button>
+            </div>
+          ))
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 12 }}>
+          <input className="input" type="date" value={newExtra.date} min={monthStart} max={monthEnd}
+            onChange={(e) => setNewExtra({ ...newExtra, date: e.target.value })} />
+          <input className="input" type="time" style={{ width: 92 }} value={newExtra.start}
+            onChange={(e) => setNewExtra({ ...newExtra, start: e.target.value })} />
+          <span className="muted">–</span>
+          <input className="input" type="time" style={{ width: 92 }} value={newExtra.end}
+            onChange={(e) => setNewExtra({ ...newExtra, end: e.target.value })} />
+          <button className="btn btn-primary" onClick={addExtra} disabled={busy}>Toevoegen</button>
+        </div>
+      </div>
 
       {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
 
@@ -352,6 +451,15 @@ export default function ShopmanagerShop({ shopId }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={dialog !== null}
+        title="Extra shift verwijderen?"
+        message={`Wil je de extra shift van ${dialog?.label || 'deze dag'} verwijderen?`}
+        confirmLabel="Ja, verwijderen"
+        onConfirm={doDeleteExtra}
+        onCancel={() => setDialog(null)}
+      />
     </>
   )
 }
