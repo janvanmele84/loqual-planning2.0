@@ -35,12 +35,14 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
   const [month, setMonth] = useState(addMonths(thisMonth, 1))
   const [openSet, setOpenSet] = useState(new Set())
   const [byDate, setByDate] = useState({})
+  const [shiftIdByDate, setShiftIdByDate] = useState({})
   const [pub, setPub] = useState(null)
   const [subStatus, setSubStatus] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [dialog, setDialog] = useState(null) // null | {kind:'remove',...} | {kind:'confirmplan'}
+  const [picker, setPicker] = useState(null) // null | {date, loading, candidates}
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -84,7 +86,12 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
         .lte('shift_date', monthEnd)
       const shiftRows = sh || []
       const dateByShift = {}
-      shiftRows.forEach((s) => (dateByShift[s.id] = s.shift_date))
+      const idByDate = {}
+      shiftRows.forEach((s) => {
+        dateByShift[s.id] = s.shift_date
+        idByDate[s.shift_date] = s.id
+      })
+      setShiftIdByDate(idByDate)
       setOpenSet(new Set(shiftRows.map((s) => s.shift_date)))
 
       const map = {}
@@ -192,13 +199,46 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
     }
   }
 
-  function onCellClick(dateStr) {
+  async function onCellClick(dateStr) {
     if (!openSet.has(dateStr)) return
     const a = byDate[dateStr]
     if (a) {
       setDialog({ kind: 'remove', id: a.id, name: a.name, date: dateStr })
-    } else {
-      setMsg({ kind: 'good', text: 'Handmatig invullen volgt in de volgende stap — gebruik voorlopig de shuffle.' })
+      return
+    }
+    setMsg(null)
+    setPicker({ date: dateStr, loading: true, candidates: [] })
+    try {
+      const { data, error } = await supabase.rpc('candidates_for_slot', { p_shop: shopId, p_day: dateStr })
+      if (error) throw error
+      setPicker({ date: dateStr, loading: false, candidates: data || [] })
+    } catch (e) {
+      setPicker(null)
+      setMsg({ kind: 'err', text: 'Beschikbare medewerkers laden mislukt.' })
+    }
+  }
+
+  async function assignCandidate(c) {
+    const date = picker?.date
+    const shiftId = shiftIdByDate[date]
+    if (!shiftId) return
+    setPicker(null)
+    setBusy(true)
+    try {
+      const { error } = await supabase.from('assignments').insert({
+        shift_id: shiftId,
+        employee_id: c.employee_id,
+        kind: c.kind,
+        status: 'manual',
+        created_by: employee.id,
+      })
+      if (error) throw error
+      await loadPlanning()
+      setMsg({ kind: 'good', text: `${c.first_name} ingepland op ${date}.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Inplannen mislukt.' })
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -365,7 +405,7 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
             </div>
             <div className="legend">
               <span className="item">
-                <span className="sw" style={{ background: 'var(--avail-bg)' }} /> Ondernemer (gratis)
+                <span className="sw" style={{ background: 'var(--avail-bg)' }} /> Ondernemer (verplichte dag)
               </span>
               <span className="item">
                 <span className="sw" style={{ background: 'var(--paid-bg)' }} /> Betaald (extra/flexi)
@@ -380,7 +420,7 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
             </div>
           </div>
 
-          <div className="hint">Tik op een ingevulde dag om die toewijzing te verwijderen.</div>
+          <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen.</div>
 
           {subStatus.length > 0 &&
             (() => {
@@ -448,6 +488,68 @@ export default function ShopmanagerPlanning({ employee, onLogout }) {
         onConfirm={dialog?.kind === 'publish' ? doPublish : doRemove}
         onCancel={() => setDialog(null)}
       />
+
+      {picker && (
+        <div style={pickerOverlay} onClick={() => setPicker(null)}>
+          <div style={pickerDialog} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginBottom: 4 }}>Wie plan je in?</h3>
+            <p className="muted" style={{ margin: '0 0 14px' }}>{picker.date}</p>
+            {picker.loading ? (
+              <div className="muted">Laden…</div>
+            ) : picker.candidates.length === 0 ? (
+              <p className="muted">Niemand gaf deze dag op als beschikbaar voor deze winkel.</p>
+            ) : (
+              <div>
+                {picker.candidates.map((c) => (
+                  <button key={c.employee_id + c.kind} style={pickerRow} onClick={() => assignCandidate(c)}>
+                    <span style={{ fontWeight: 600 }}>{c.first_name}</span>
+                    <span className="muted" style={{ fontSize: 13 }}>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="btn" onClick={() => setPicker(null)}>Sluiten</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Shell>
   )
+}
+
+const pickerOverlay = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(42, 37, 33, 0.45)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 20,
+  zIndex: 50,
+}
+const pickerDialog = {
+  background: 'var(--surface)',
+  border: '1px solid var(--line)',
+  borderRadius: 16,
+  padding: '22px',
+  maxWidth: 380,
+  width: '100%',
+  maxHeight: '80vh',
+  overflowY: 'auto',
+  boxShadow: '0 16px 40px rgba(42, 37, 33, 0.18)',
+}
+const pickerRow = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  width: '100%',
+  padding: '11px 4px',
+  border: 'none',
+  borderBottom: '1px solid var(--line)',
+  background: 'transparent',
+  cursor: 'pointer',
+  fontSize: 15,
+  color: 'var(--ink)',
+  textAlign: 'left',
 }
