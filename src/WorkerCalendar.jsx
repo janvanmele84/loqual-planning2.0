@@ -34,12 +34,13 @@ export default function WorkerCalendar({ employee, onLogout }) {
   const [prefShops, setPrefShops] = useState([])
   const [openSet, setOpenSet] = useState(new Set())
   const [days, setDays] = useState(new Set())
+  const [lockedDays, setLockedDays] = useState(new Set())
   const [maxDays, setMaxDays] = useState(0)
   const [submission, setSubmission] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [dialog, setDialog] = useState(null) // null | 'confirm' | 'extra'
 
   const monthStart = ymd(firstOfMonth(month))
   const monthEnd = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -97,6 +98,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
         prefs = (pr || []).map((r) => r.shop_id)
       }
       setDays(dd)
+      setLockedDays(sub?.confirmed_at ? new Set(dd) : new Set())
       setPrefShops(prefs)
     } catch (e) {
       setMsg({ kind: 'err', text: 'Laden mislukt. Probeer opnieuw.' })
@@ -127,10 +129,21 @@ export default function WorkerCalendar({ employee, onLogout }) {
   async function toggleDay(dateStr) {
     if (!openSet.has(dateStr)) return
     const has = days.has(dateStr)
-    if (has && locked) {
-      setMsg({ kind: 'err', text: 'Deze dag is al bevestigd en kan niet meer verwijderd worden.' })
+
+    if (locked) {
+      if (has && lockedDays.has(dateStr)) {
+        setMsg({ kind: 'err', text: 'Deze dag is bevestigd en kan niet meer verwijderd worden.' })
+        return
+      }
+      setDays((prev) => {
+        const n = new Set(prev)
+        has ? n.delete(dateStr) : n.add(dateStr)
+        return n
+      })
+      setMsg(null)
       return
     }
+
     setDays((prev) => {
       const n = new Set(prev)
       has ? n.delete(dateStr) : n.add(dateStr)
@@ -206,11 +219,11 @@ export default function WorkerCalendar({ employee, onLogout }) {
       setMsg({ kind: 'err', text: 'Duid minstens één dag aan.' })
       return
     }
-    setConfirmOpen(true)
+    setDialog('confirm')
   }
 
   async function doConfirm() {
-    setConfirmOpen(false)
+    setDialog(null)
     setBusy(true)
     try {
       const sub = await ensureSubmission()
@@ -223,7 +236,8 @@ export default function WorkerCalendar({ employee, onLogout }) {
         .single()
       if (error) throw error
       setSubmission(data)
-      setMsg({ kind: 'good', text: 'Bevestigd. Je kunt nog dagen toevoegen, maar niet meer verwijderen.' })
+      setLockedDays(new Set(days))
+      setMsg({ kind: 'good', text: 'Bevestigd. Je kunt nog extra dagen toevoegen, maar niet meer verwijderen.' })
     } catch (e) {
       setMsg({ kind: 'err', text: 'Bevestigen mislukt.' })
     } finally {
@@ -231,8 +245,28 @@ export default function WorkerCalendar({ employee, onLogout }) {
     }
   }
 
+  async function doAddExtra() {
+    setDialog(null)
+    const pending = [...days].filter((d) => !lockedDays.has(d))
+    if (!pending.length) return
+    setBusy(true)
+    try {
+      const sub = await ensureSubmission()
+      await supabase
+        .from('availability_days')
+        .insert(pending.map((d) => ({ submission_id: sub.id, day: d, kind: 'work' })))
+      setLockedDays((prev) => new Set([...prev, ...pending]))
+      setMsg({ kind: 'good', text: `${pending.length} extra ${pending.length === 1 ? 'dag' : 'dagen'} toegevoegd.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Toevoegen mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const canPrev = month > thisMonth
   const canNext = month < addMonths(thisMonth, 2)
+  const pendingCount = [...days].filter((d) => !lockedDays.has(d)).length
 
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
   const blanks = leadingBlanks(month)
@@ -337,7 +371,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
                     onClick={() => toggleDay(c.str)}
                   >
                     {c.d}
-                    {locked && days.has(c.str) && <span className="lock">●</span>}
+                    {lockedDays.has(c.str) && <span className="lock">●</span>}
                   </div>
                 ),
               )}
@@ -352,17 +386,29 @@ export default function WorkerCalendar({ employee, onLogout }) {
             </div>
           </div>
 
-          <button
-            className="btn btn-primary btn-block"
-            style={{ marginTop: 16 }}
-            onClick={askConfirm}
-            disabled={busy || locked}
-          >
-            {locked ? 'Bevestigd' : busy ? 'Bezig…' : 'Bevestigen'}
-          </button>
+          {!locked ? (
+            <button
+              className="btn btn-primary btn-block"
+              style={{ marginTop: 16 }}
+              onClick={askConfirm}
+              disabled={busy}
+            >
+              {busy ? 'Bezig…' : 'Bevestigen'}
+            </button>
+          ) : pendingCount > 0 ? (
+            <button
+              className="btn btn-primary btn-block"
+              style={{ marginTop: 16 }}
+              onClick={() => setDialog('extra')}
+              disabled={busy}
+            >
+              {busy ? 'Bezig…' : `Extra ${pendingCount === 1 ? 'dag' : 'dagen'} toevoegen (${pendingCount})`}
+            </button>
+          ) : null}
+
           <div className="hint" style={{ textAlign: 'center' }}>
             {locked
-              ? 'Je doorgave staat vast. Toevoegen kan nog, verwijderen niet.'
+              ? 'Je doorgave staat vast. Nieuwe dagen kun je nog vrij aanklikken en toevoegen; bevestigde dagen (●) niet meer verwijderen.'
               : 'Je keuzes worden automatisch bewaard.'}
           </div>
           {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
@@ -370,11 +416,16 @@ export default function WorkerCalendar({ employee, onLogout }) {
       )}
 
       <ConfirmDialog
-        open={confirmOpen}
-        title="Beschikbaarheden bevestigen?"
-        message="Als je bevestigt, kun je je doorgegeven dagen niet meer wijzigen of verwijderen — toevoegen kan nog wel. Dit kun je niet ongedaan maken. Ben je zeker?"
-        onConfirm={doConfirm}
-        onCancel={() => setConfirmOpen(false)}
+        open={dialog !== null}
+        title={dialog === 'extra' ? 'Extra dagen toevoegen?' : 'Beschikbaarheden bevestigen?'}
+        message={
+          dialog === 'extra'
+            ? 'Deze extra dagen worden definitief toegevoegd en kun je nadien niet meer verwijderen. Toevoegen?'
+            : 'Als je bevestigt, kun je je doorgegeven dagen niet meer wijzigen of verwijderen — toevoegen kan nog wel. Dit kun je niet ongedaan maken. Ben je zeker?'
+        }
+        confirmLabel={dialog === 'extra' ? 'Ja, toevoegen' : 'Ja, bevestigen'}
+        onConfirm={dialog === 'extra' ? doAddExtra : doConfirm}
+        onCancel={() => setDialog(null)}
       />
     </Shell>
   )
