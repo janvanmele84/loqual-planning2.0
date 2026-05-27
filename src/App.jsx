@@ -6,6 +6,7 @@ import Placeholder from './Placeholder.jsx'
 import OndernemerCalendar from './OndernemerCalendar.jsx'
 import WorkerCalendar from './WorkerCalendar.jsx'
 import ShopmanagerHome from './ShopmanagerHome.jsx'
+import AdminHome from './AdminHome.jsx'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -67,6 +68,9 @@ export default function App() {
   }
   if (employee.role === 'shopmanager') {
     return <ShopmanagerHome employee={employee} onLogout={logout} />
+  }
+  if (employee.role === 'admin') {
+    return <AdminHome employee={employee} onLogout={logout} />
   }
   return <Placeholder employee={employee} onLogout={logout} />
 }
