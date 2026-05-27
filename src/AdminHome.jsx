@@ -3,6 +3,8 @@ import Shell from './Shell.jsx'
 import AdminShops from './AdminShops.jsx'
 import AdminManagers from './AdminManagers.jsx'
 import AdminAccounts from './AdminAccounts.jsx'
+import AdminImport from './AdminImport.jsx'
+import BonusOverview from './BonusOverview.jsx'
 
 export default function AdminHome({ employee, onLogout }) {
   const [tab, setTab] = useState('winkels')
@@ -21,9 +23,19 @@ export default function AdminHome({ employee, onLogout }) {
         <button className={'tab' + (tab === 'accounts' ? ' active' : '')} onClick={() => setTab('accounts')}>
           Accounts
         </button>
+        <button className={'tab' + (tab === 'import' ? ' active' : '')} onClick={() => setTab('import')}>
+          Import
+        </button>
+        <button className={'tab' + (tab === 'bonus' ? ' active' : '')} onClick={() => setTab('bonus')}>
+          Bonus
+        </button>
       </div>
 
-      {tab === 'winkels' ? <AdminShops /> : tab === 'managers' ? <AdminManagers /> : <AdminAccounts employee={employee} />}
+      {tab === 'winkels' ? <AdminShops />
+        : tab === 'managers' ? <AdminManagers />
+        : tab === 'accounts' ? <AdminAccounts employee={employee} />
+        : tab === 'import' ? <AdminImport />
+        : <BonusOverview filterManagerId={null} />}
     </Shell>
   )
 }
