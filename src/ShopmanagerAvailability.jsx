@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 
 const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
@@ -28,6 +28,7 @@ export default function ShopmanagerAvailability({ shopId }) {
   const [werkers, setWerkers] = useState([])
   const [editing, setEditing] = useState(null) // null | {kind:'ond'|'werk', person}
   const [msg, setMsg] = useState(null)
+  const [search, setSearch] = useState('')
   const ensureRef = useRef({}) // person.id -> Promise<submission_id>
 
   const load = useCallback(async () => {
@@ -207,6 +208,24 @@ export default function ShopmanagerAvailability({ shopId }) {
   }
   const firstWd = monthDays[0]?.wd ?? 0
 
+  const visibleOnd = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return ondernemers
+    return ondernemers.filter((o) => {
+      const s = [o.first_name, o.last_name, o.company_name].filter(Boolean).join(' ').toLowerCase()
+      return s.includes(q)
+    })
+  }, [ondernemers, search])
+
+  const visibleWerk = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return werkers
+    return werkers.filter((w) => {
+      const s = [w.first_name, w.last_name].filter(Boolean).join(' ').toLowerCase()
+      return s.includes(q)
+    })
+  }, [werkers, search])
+
   const canPrev = month > addMonths(thisMonth, -4)
   const canNext = month < addMonths(thisMonth, 6)
 
@@ -228,12 +247,24 @@ export default function ShopmanagerAvailability({ shopId }) {
         <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
       ) : (
         <>
+          {(ondernemers.length > 0 || werkers.length > 0) && (
+            <input
+              className="input fw"
+              type="text"
+              placeholder="Zoek op naam…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ marginBottom: 12 }}
+            />
+          )}
           <div className="card">
             <div className="section-title">Ondernemers</div>
             {ondernemers.length === 0 ? (
               <div className="muted">Geen ondernemers gekoppeld aan deze winkel.</div>
+            ) : visibleOnd.length === 0 ? (
+              <div className="muted">Geen ondernemers gevonden voor "{search}".</div>
             ) : (
-              ondernemers.map((o) => (
+              visibleOnd.map((o) => (
                 <div className="row-item" key={o.id}>
                   <span style={{ minWidth: 0 }}>
                     <strong>{o.first_name}{o.last_name ? ' ' + o.last_name : ''}</strong>
@@ -263,8 +294,10 @@ export default function ShopmanagerAvailability({ shopId }) {
             </div>
             {werkers.length === 0 ? (
               <div className="muted">Niemand gaf deze winkel als voorkeur op.</div>
+            ) : visibleWerk.length === 0 ? (
+              <div className="muted">Geen flexi's of jobstudenten gevonden voor "{search}".</div>
             ) : (
-              werkers.map((w) => (
+              visibleWerk.map((w) => (
                 <div className="row-item" key={w.id}>
                   <span style={{ minWidth: 0 }}>
                     <strong>{w.first_name}{w.last_name ? ' ' + w.last_name : ''}</strong>
