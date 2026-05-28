@@ -121,6 +121,36 @@ export default function AdminAccounts({ employee }) {
     }
   }
 
+  async function invite(ids, label) {
+    if (!ids.length) return
+    setBusy(true); setMsg(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('invite-users', {
+        body: {
+          employee_ids: ids,
+          redirect_to: window.location.origin + window.location.pathname,
+        },
+      })
+      if (error) throw error
+      const r = data || {}
+      const bits = []
+      if (r.invited) bits.push(`${r.invited} uitgenodigd`)
+      if (r.reLinked) bits.push(`${r.reLinked} hergekoppeld (paswoord-reset verstuurd)`)
+      if (r.skipped) bits.push(`${r.skipped} overgeslagen`)
+      if (r.failed) bits.push(`${r.failed} mislukt`)
+      const text = bits.length ? bits.join(', ') : 'Geen wijzigingen.'
+      setMsg({
+        kind: r.failed ? 'err' : 'good',
+        text: `${label}: ${text}.${r.errors?.length ? ' Fout: ' + r.errors.slice(0, 3).join('; ') : ''}`,
+      })
+      await load()
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Versturen mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <div className="pills" style={{ marginBottom: 12 }}>
@@ -131,6 +161,27 @@ export default function AdminAccounts({ employee }) {
           </button>
         ))}
       </div>
+
+      {(() => {
+        const noLogin = people.filter((p) => p.active && !p.auth_user_id && p.email).length
+        if (noLogin === 0) return null
+        return (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <strong>{noLogin}</strong> actieve medewerker(s) hebben nog geen login.
+            <button
+              className="btn"
+              style={{ marginLeft: 12, padding: '6px 12px', fontSize: 13 }}
+              disabled={busy}
+              onClick={() => {
+                const ids = people.filter((p) => p.active && !p.auth_user_id && p.email).map((p) => p.id)
+                invite(ids, `Bulkuitnodiging (${ids.length})`)
+              }}
+            >
+              Iedereen uitnodigen
+            </button>
+          </div>
+        )
+      })()}
 
       <div className="card">
         {loading ? (
@@ -153,6 +204,16 @@ export default function AdminAccounts({ employee }) {
                   </span>
                 </span>
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                  {!p.auth_user_id && p.active && p.email && (
+                    <button
+                      className="btn"
+                      style={{ padding: '6px 10px', fontSize: 13 }}
+                      onClick={() => invite([p.id], `${p.first_name}`)}
+                      disabled={busy}
+                    >
+                      Uitnodigen
+                    </button>
+                  )}
                   <button className="btn" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => openEdit(p)} disabled={busy}>
                     Bewerken
                   </button>
