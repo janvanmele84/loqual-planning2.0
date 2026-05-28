@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import TeamCalendar from './TeamCalendar.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -30,6 +31,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
   const thisMonth = firstOfMonth(today)
 
   const [month, setMonth] = useState(thisMonth)
+  const [view, setView] = useState('mine') // 'mine' | 'team'
   const [shops, setShops] = useState([])
   const [prefShops, setPrefShops] = useState([])
   const [lockedShops, setLockedShops] = useState(new Set())
@@ -332,6 +334,16 @@ export default function WorkerCalendar({ employee, onLogout }) {
 
   return (
     <Shell employee={employee} onLogout={onLogout}>
+      <div className="tabs">
+        <button className={'tab' + (view === 'mine' ? ' active' : '')} onClick={() => setView('mine')}>
+          Mijn beschikbaarheid
+        </button>
+        <button className={'tab' + (view === 'team' ? ' active' : '')} onClick={() => setView('team')}>
+          Wie werkt wanneer
+        </button>
+      </div>
+      {view === 'team' ? <TeamCalendar employee={employee} /> : (
+      <>
       <div className="monthnav">
         <button className="icon-btn" onClick={() => canPrev && setMonth(addMonths(month, -1))} disabled={!canPrev}>
           ‹
@@ -502,6 +514,8 @@ export default function WorkerCalendar({ employee, onLogout }) {
         onConfirm={dialog === 'extra' ? doAddExtra : doConfirm}
         onCancel={() => setDialog(null)}
       />
+      </>
+      )}
     </Shell>
   )
 }

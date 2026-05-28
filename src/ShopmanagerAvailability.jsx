@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from './supabaseClient'
 
 const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
@@ -28,10 +28,12 @@ export default function ShopmanagerAvailability({ shopId }) {
   const [werkers, setWerkers] = useState([])
   const [editing, setEditing] = useState(null) // null | {kind:'ond'|'werk', person}
   const [msg, setMsg] = useState(null)
+  const ensureRef = useRef({}) // person.id -> Promise<submission_id>
 
   const load = useCallback(async () => {
     setLoading(true)
     setMsg(null)
+    ensureRef.current = {}
     try {
       // 1) Open dagen van DEZE winkel deze maand
       const { data: shifts } = await supabase
@@ -139,47 +141,62 @@ export default function ShopmanagerAvailability({ shopId }) {
 
   useEffect(() => { load() }, [load])
 
+  async function getSubmissionId(person) {
+    if (person.submission_id) return person.submission_id
+    if (ensureRef.current[person.id]) return ensureRef.current[person.id]
+    const p = (async () => {
+      const { data, error } = await supabase.rpc('manager_ensure_submission', {
+        p_employee: person.id, p_month: monthStart,
+      })
+      if (error) throw error
+      return data
+    })()
+    ensureRef.current[person.id] = p
+    return p
+  }
+
   async function toggleDay(personKind, person, kind, dayStr, currentlyOn) {
-    if (busy || monthIsPast) return
+    if (monthIsPast) return
     const willBeOn = !currentlyOn
-    setBusy(true); setMsg(null)
-    try {
-      let sid = person.submission_id
-      if (!sid) {
-        const { data, error } = await supabase.rpc('manager_ensure_submission', {
-          p_employee: person.id, p_month: monthStart,
-        })
-        if (error) throw error
-        sid = data
+
+    // 1) Onmiddellijke (optimistische) UI-update
+    let updated
+    if (personKind === 'ond') {
+      const newMan = new Set(person.mandatory)
+      const newExt = new Set(person.extra)
+      if (kind === 'mandatory') {
+        if (willBeOn) { newMan.add(dayStr); newExt.delete(dayStr) } else newMan.delete(dayStr)
+      } else {
+        if (willBeOn) { newExt.add(dayStr); newMan.delete(dayStr) } else newExt.delete(dayStr)
       }
-      const { error: e2 } = await supabase.rpc('manager_set_availability_day', {
+      updated = { ...person, mandatory: newMan, extra: newExt }
+      setOndernemers((prev) => prev.map((o) => (o.id === person.id ? updated : o)))
+    } else {
+      const newWork = new Set(person.work)
+      if (willBeOn) newWork.add(dayStr); else newWork.delete(dayStr)
+      updated = { ...person, work: newWork }
+      setWerkers((prev) => prev.map((w) => (w.id === person.id ? updated : w)))
+    }
+    setEditing((cur) => (cur && cur.person.id === person.id ? { kind: personKind, person: updated } : cur))
+
+    // 2) Opslaan op de achtergrond
+    try {
+      const sid = await getSubmissionId(person)
+      if (!person.submission_id) {
+        // submission_id terugschrijven in de state zodat volgende kliks hem hebben
+        const apply = (x) => (x.id === person.id ? { ...x, submission_id: sid } : x)
+        if (personKind === 'ond') setOndernemers((prev) => prev.map(apply))
+        else setWerkers((prev) => prev.map(apply))
+        setEditing((cur) => (cur && cur.person.id === person.id
+          ? { kind: personKind, person: { ...cur.person, submission_id: sid } } : cur))
+      }
+      const { error } = await supabase.rpc('manager_set_availability_day', {
         p_submission: sid, p_day: dayStr, p_kind: kind, p_present: willBeOn,
       })
-      if (e2) throw e2
-
-      if (personKind === 'ond') {
-        const newMan = new Set(person.mandatory)
-        const newExt = new Set(person.extra)
-        if (kind === 'mandatory') {
-          if (willBeOn) { newMan.add(dayStr); newExt.delete(dayStr) } else newMan.delete(dayStr)
-        } else if (kind === 'extra') {
-          if (willBeOn) { newExt.add(dayStr); newMan.delete(dayStr) } else newExt.delete(dayStr)
-        }
-        const updated = { ...person, submission_id: sid, mandatory: newMan, extra: newExt }
-        setOndernemers((prev) => prev.map((o) => (o.id === person.id ? updated : o)))
-        setEditing({ kind: 'ond', person: updated })
-      } else {
-        const newWork = new Set(person.work)
-        if (willBeOn) newWork.add(dayStr); else newWork.delete(dayStr)
-        const updated = { ...person, submission_id: sid, work: newWork }
-        setWerkers((prev) => prev.map((w) => (w.id === person.id ? updated : w)))
-        setEditing({ kind: 'werk', person: updated })
-      }
+      if (error) throw error
     } catch (e) {
-      setMsg({ kind: 'err', text: e?.message || 'Wijzigen mislukt.' })
+      setMsg({ kind: 'err', text: 'Opslaan mislukt — opnieuw geladen.' })
       await load()
-    } finally {
-      setBusy(false)
     }
   }
 

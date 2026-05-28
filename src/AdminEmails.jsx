@@ -90,7 +90,7 @@ function Templates() {
         ))
       )}
 
-      {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`} style={{ marginTop: 8 }}>{msg.text}</div>}
+      {msg && !editing && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`} style={{ marginTop: 8 }}>{msg.text}</div>}
 
       {editing && (
         <div style={ovl} onClick={() => setEditing(null)}>
@@ -109,6 +109,7 @@ function Templates() {
                 Beschikbare variabelen: <code>{editing.placeholders}</code>
               </div>
             )}
+            {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`} style={{ marginTop: 10 }}>{msg.text}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button className="btn" onClick={() => setEditing(null)}>Annuleren</button>
               <button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Bezig…' : 'Bewaren'}</button>
@@ -236,7 +237,7 @@ function ShopMail() {
         })
       )}
 
-      {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`} style={{ marginTop: 8 }}>{msg.text}</div>}
+      {msg && !editing && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`} style={{ marginTop: 8 }}>{msg.text}</div>}
 
       {editing && (
         <div style={ovl} onClick={() => setEditing(null)}>
@@ -295,6 +296,8 @@ function ShopMail() {
             <div className="hint" style={{ marginBottom: 0, marginTop: 8 }}>
               Het app-wachtwoord wordt opgeslagen in de databank, enkel zichtbaar voor admins.
             </div>
+
+            {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`} style={{ marginTop: 10 }}>{msg.text}</div>}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button className="btn" onClick={() => setEditing(null)}>Annuleren</button>
