@@ -2,13 +2,16 @@ import { useState } from 'react'
 import { supabase } from './supabaseClient'
 
 // Verwachte kolommen (volgorde maakt niet uit, hoofdletters maakt niet uit):
-// bedrijfsnaam | voornaam | familienaam | email | winkel | startdatum | stopdatum | uitbatingsdagen | hogere_commissie
-const REQUIRED = ['voornaam', 'email', 'winkel', 'startdatum']
+// bedrijfsnaam | voornaam | familienaam | email | winkel | startdatum | stopdatum | uitbatingsdagen | hogere_commissie | rol
+// Voor ondernemers (rol leeg of "ondernemer"): winkel + startdatum verplicht.
+// Voor flexi/jobstudent (rol = "flexi" of "jobstudent"): enkel voornaam + email nodig.
+const REQUIRED = ['voornaam', 'email']
 const SAMPLE =
-  'bedrijfsnaam\tvoornaam\tfamilienaam\temail\twinkel\tstartdatum\tstopdatum\tuitbatingsdagen\thogere_commissie\n' +
-  'Kaashuis Maes\tTom\tMaes\ttom@maes.be\tAalst\t2026-01-01\t\t2\tnee\n' +
-  'Kaashuis Maes\tTom\tMaes\ttom@maes.be\tGent\t2026-01-01\t\t1\tnee\n' +
-  'Wijnhuis De Smet\tLien\tDe Smet\tlien@desmet.be\tAalst\t2026-01-01\t2026-08-31\t\tja'
+  'bedrijfsnaam\tvoornaam\tfamilienaam\temail\twinkel\tstartdatum\tstopdatum\tuitbatingsdagen\thogere_commissie\trol\n' +
+  'Kaashuis Maes\tTom\tMaes\ttom@maes.be\tAalst\t2026-01-01\t\t2\tnee\t\n' +
+  'Wijnhuis De Smet\tLien\tDe Smet\tlien@desmet.be\tAalst\t2026-01-01\t2026-08-31\t\tja\t\n' +
+  '\tAnnemie\tBaert\tannemie.braet@hotmail.be\t\t\t\t\t\tflexi\n' +
+  '\tEmily\tBlanchetot\temily@example.be\t\t\t\t\t\tjobstudent'
 
 export default function AdminImport() {
   const [text, setText] = useState('')
@@ -36,8 +39,11 @@ export default function AdminImport() {
     for (let i = 1; i < lines.length; i++) {
       const cells = lines[i].split(delim).map((c) => c.trim())
       const get = (k) => (idx(k) >= 0 ? cells[idx(k)] || '' : '')
+      const rawRole = get('rol').toLowerCase()
+      const role = rawRole || 'ondernemer'
       const r = {
         line: i + 1,
+        role,
         company: get('bedrijfsnaam'),
         first: get('voornaam'),
         last: get('familienaam'),
@@ -51,15 +57,20 @@ export default function AdminImport() {
       }
       if (!r.first) r.problems.push('voornaam leeg')
       if (!r.email) r.problems.push('e-mail leeg')
-      if (!r.shop) r.problems.push('winkel leeg')
-      if (!isDate(r.start)) r.problems.push('startdatum ongeldig (gebruik 2026-01-31)')
-      if (r.end && !isDate(r.end)) r.problems.push('stopdatum ongeldig')
-      if (!r.higher) {
-        const n = r.days === '' ? 1 : Number(r.days)
-        if (!Number.isInteger(n) || n < 1) r.problems.push('uitbatingsdagen moet 1 of meer zijn')
-        r.operate_days = Number.isInteger(n) && n >= 1 ? n : 1
-      } else {
-        r.operate_days = 1
+      if (!['ondernemer', 'flexi', 'jobstudent'].includes(role)) {
+        r.problems.push(`rol "${rawRole}" niet geldig (gebruik ondernemer, flexi of jobstudent)`)
+      }
+      if (role === 'ondernemer') {
+        if (!r.shop) r.problems.push('winkel leeg')
+        if (!isDate(r.start)) r.problems.push('startdatum ongeldig (gebruik 2026-01-31)')
+        if (r.end && !isDate(r.end)) r.problems.push('stopdatum ongeldig')
+        if (!r.higher) {
+          const n = r.days === '' ? 1 : Number(r.days)
+          if (!Number.isInteger(n) || n < 1) r.problems.push('uitbatingsdagen moet 1 of meer zijn')
+          r.operate_days = Number.isInteger(n) && n >= 1 ? n : 1
+        } else {
+          r.operate_days = 1
+        }
       }
       rows.push(r)
     }
@@ -93,6 +104,30 @@ export default function AdminImport() {
           errors.push(`Regel ${r.line}: ${r.problems.join(', ')}`)
           continue
         }
+
+        // Flexi / jobstudent: enkel persoon aanmaken (geen winkelkoppeling).
+        if (r.role === 'flexi' || r.role === 'jobstudent') {
+          if (empByEmail.get(r.email)) { skipped++; continue }
+          const { data: ins, error: insErr } = await supabase
+            .from('employees')
+            .insert({
+              role: r.role,
+              first_name: r.first,
+              last_name: r.last || null,
+              email: r.email,
+            })
+            .select('id')
+            .single()
+          if (insErr || !ins) {
+            errors.push(`Regel ${r.line}: persoon aanmaken mislukt (${insErr?.message || 'onbekend'})`)
+            continue
+          }
+          empByEmail.set(r.email, ins.id)
+          createdPeople++
+          continue
+        }
+
+        // Ondernemer: persoon + winkelkoppeling
         const shopId = shopByName.get(r.shop.toLowerCase())
         if (!shopId) {
           errors.push(`Regel ${r.line}: winkel "${r.shop}" niet gevonden`)
@@ -158,14 +193,16 @@ export default function AdminImport() {
   return (
     <>
       <div className="card">
-        <div className="section-title">Ondernemers importeren</div>
+        <div className="section-title">Medewerkers importeren</div>
         <div className="hint" style={{ marginTop: 0 }}>
           Kopieer je lijst uit Excel of Google Sheets met deze kolommen, en plak hieronder. Eén rij per
-          (ondernemer, winkel)-combinatie. Een ondernemer die in meerdere winkels ligt, krijgt dus meerdere rijen.
+          (ondernemer, winkel)-combinatie — een ondernemer in meerdere winkels krijgt meerdere rijen.
+          Voor flexi's of jobstudenten volstaat één rij per persoon met <em>rol = flexi</em> of <em>rol = jobstudent</em>;
+          de winkel-, startdatum- en uitbatingsdagen-velden mogen dan leeg blijven.
           Bij <em>hogere_commissie = ja</em> wordt uitbatingsdagen genegeerd.
         </div>
         <div className="hint" style={{ fontFamily: 'monospace', fontSize: 12 }}>
-          bedrijfsnaam · voornaam · familienaam · email · winkel · startdatum · stopdatum · uitbatingsdagen · hogere_commissie
+          bedrijfsnaam · voornaam · familienaam · email · winkel · startdatum · stopdatum · uitbatingsdagen · hogere_commissie · rol
         </div>
         <textarea
           className="input fw"
