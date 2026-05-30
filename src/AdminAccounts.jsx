@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
 
@@ -18,6 +18,7 @@ export default function AdminAccounts({ employee }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
   const [dialog, setDialog] = useState(null) // null | {kind:'new'} | {kind:'edit', id} | {kind:'del', emp}
   const [form, setForm] = useState({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true })
 
@@ -36,7 +37,15 @@ export default function AdminAccounts({ employee }) {
     load()
   }, [load])
 
-  const shown = people.filter((p) => filter === 'all' || p.role === filter)
+  const byRole = people.filter((p) => filter === 'all' || p.role === filter)
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return byRole
+    return byRole.filter((p) => {
+      const s = [p.first_name, p.last_name, p.email, p.company_name].filter(Boolean).join(' ').toLowerCase()
+      return s.includes(q)
+    })
+  }, [byRole, search])
 
   function openNew() {
     setForm({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true })
@@ -184,6 +193,14 @@ export default function AdminAccounts({ employee }) {
 
   return (
     <>
+      <input
+        className="input fw"
+        type="text"
+        placeholder="Zoek op naam of e-mail…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        style={{ marginBottom: 12 }}
+      />
       <div className="pills" style={{ marginBottom: 12 }}>
         <button className={'pill' + (filter === 'all' ? ' active' : '')} onClick={() => setFilter('all')}>Alle</button>
         {ROLES.map((r) => (
