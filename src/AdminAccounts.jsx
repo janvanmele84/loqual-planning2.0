@@ -121,6 +121,37 @@ export default function AdminAccounts({ employee }) {
     }
   }
 
+  async function bulkCreate(ids) {
+    if (!ids.length) return
+    const pwd = window.prompt(
+      `Welk tijdelijk wachtwoord wil je instellen voor deze ${ids.length} medewerker(s)?\n\nIedereen krijgt hetzelfde wachtwoord en wordt bij eerste login gevraagd om er zelf een te kiezen.`,
+      'Loqual2026',
+    )
+    if (pwd === null) return
+    if (pwd.length < 6) { setMsg({ kind: 'err', text: 'Wachtwoord moet minstens 6 tekens lang zijn.' }); return }
+    setBusy(true); setMsg(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('bulk-create-logins', {
+        body: { employee_ids: ids, password: pwd },
+      })
+      if (error) throw error
+      const r = data || {}
+      const bits = []
+      if (r.created) bits.push(`${r.created} aangemaakt`)
+      if (r.linked) bits.push(`${r.linked} bestaande gekoppeld`)
+      if (r.failed) bits.push(`${r.failed} mislukt`)
+      setMsg({
+        kind: r.failed ? 'err' : 'good',
+        text: `${bits.join(', ') || 'Geen wijzigingen'}. Tijdelijk wachtwoord: "${r.password || pwd}".${r.errors?.length ? ' Fout: ' + r.errors.slice(0, 3).join('; ') : ''}`,
+      })
+      await load()
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Aanmaken mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function invite(ids, label) {
     if (!ids.length) return
     setBusy(true); setMsg(null)
@@ -163,22 +194,37 @@ export default function AdminAccounts({ employee }) {
       </div>
 
       {(() => {
-        const noLogin = people.filter((p) => p.active && !p.auth_user_id && p.email).length
+        const noLoginPool = people.filter((p) => p.active && !p.auth_user_id && p.email)
+        const noLogin = noLoginPool.length
         if (noLogin === 0) return null
         return (
           <div className="card" style={{ marginBottom: 12 }}>
-            <strong>{noLogin}</strong> actieve medewerker(s) hebben nog geen login.
-            <button
-              className="btn"
-              style={{ marginLeft: 12, padding: '6px 12px', fontSize: 13 }}
-              disabled={busy}
-              onClick={() => {
-                const ids = people.filter((p) => p.active && !p.auth_user_id && p.email).map((p) => p.id)
-                invite(ids, `Bulkuitnodiging (${ids.length})`)
-              }}
-            >
-              Iedereen uitnodigen
-            </button>
+            <div style={{ marginBottom: 8 }}>
+              <strong>{noLogin}</strong> actieve medewerker(s) hebben nog geen login.
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary"
+                style={{ padding: '6px 12px', fontSize: 13 }}
+                disabled={busy}
+                onClick={() => bulkCreate(noLoginPool.map((p) => p.id))}
+              >
+                Logins aanmaken (zonder mail)
+              </button>
+              <button
+                className="btn"
+                style={{ padding: '6px 12px', fontSize: 13 }}
+                disabled={busy}
+                onClick={() => invite(noLoginPool.map((p) => p.id), `Bulkuitnodiging (${noLogin})`)}
+              >
+                Mail-uitnodigingen versturen
+              </button>
+            </div>
+            <div className="hint" style={{ marginBottom: 0, marginTop: 8 }}>
+              "Zonder mail" geeft iedereen tijdelijk hetzelfde wachtwoord; bij eerste login moet de gebruiker
+              er zelf een kiezen. "Via mail" stuurt elke medewerker een persoonlijke uitnodigingslink (vereist
+              dat de auth-SMTP in Supabase ingesteld is).
+            </div>
           </div>
         )
       })()}
@@ -208,10 +254,10 @@ export default function AdminAccounts({ employee }) {
                     <button
                       className="btn"
                       style={{ padding: '6px 10px', fontSize: 13 }}
-                      onClick={() => invite([p.id], `${p.first_name}`)}
+                      onClick={() => bulkCreate([p.id])}
                       disabled={busy}
                     >
-                      Uitnodigen
+                      Login aanmaken
                     </button>
                   )}
                   <button className="btn" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => openEdit(p)} disabled={busy}>

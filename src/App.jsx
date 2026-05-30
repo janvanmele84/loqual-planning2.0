@@ -78,6 +78,17 @@ export default function App() {
       </Shell>
     )
   }
+  if (employee.must_change_password) {
+    return (
+      <SetPassword
+        email={session.user?.email}
+        onDone={async () => {
+          try { await supabase.rpc('mark_password_set') } catch (_) {}
+          setEmployee((e) => (e ? { ...e, must_change_password: false } : e))
+        }}
+      />
+    )
+  }
 
   if (employee.role === 'ondernemer') {
     return <OndernemerCalendar employee={employee} onLogout={logout} />
