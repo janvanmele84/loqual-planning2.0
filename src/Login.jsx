@@ -50,6 +50,19 @@ export default function Login() {
           <button className="btn btn-primary btn-block" type="submit" disabled={busy} style={{ marginTop: 8 }}>
             {busy ? 'Bezig…' : 'Aanmelden'}
           </button>
+          <div style={{ marginTop: 14, textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => alert('Contacteer je shopmanager of de Loqual-administrator om je wachtwoord te laten resetten. Je krijgt dan een tijdelijk wachtwoord waarmee je kan aanmelden en meteen een nieuw wachtwoord instellen.')}
+              style={{
+                background: 'none', border: 'none', padding: 0,
+                color: 'var(--muted, #6b6b6b)', textDecoration: 'underline',
+                fontSize: 13, cursor: 'pointer',
+              }}
+            >
+              Wachtwoord vergeten?
+            </button>
+          </div>
         </form>
       </div>
     </div>

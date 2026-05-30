@@ -20,7 +20,7 @@ export default function AdminAccounts({ employee }) {
   const [msg, setMsg] = useState(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [dialog, setDialog] = useState(null) // null | {kind:'new'} | {kind:'edit', id} | {kind:'del', emp}
+  const [dialog, setDialog] = useState(null) // null | {kind:'new'} | {kind:'edit', id} | {kind:'del', emp} | {kind:'reset', emp}
   const [form, setForm] = useState({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true })
 
   const load = useCallback(async () => {
@@ -126,6 +126,22 @@ export default function AdminAccounts({ employee }) {
         kind: 'err',
         text: 'Verwijderen lukt niet — deze persoon heeft gegevens aangemaakt (bv. planning). Zet hem liever op niet-actief.',
       })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doResetPassword() {
+    const p = dialog.emp
+    setDialog(null)
+    setBusy(true)
+    try {
+      const { error } = await supabase.rpc('admin_reset_password', { p_employee_id: p.id })
+      if (error) throw error
+      await load()
+      setMsg({ kind: 'good', text: `Wachtwoord van ${p.first_name} teruggezet naar Loqual2026. Bij volgende login moet er een nieuw wachtwoord ingesteld worden.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Reset mislukt.' })
     } finally {
       setBusy(false)
     }
@@ -281,6 +297,17 @@ export default function AdminAccounts({ employee }) {
                   <button className="btn" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => openEdit(p)} disabled={busy}>
                     Bewerken
                   </button>
+                  {p.auth_user_id && !isSelf && (
+                    <button
+                      className="btn"
+                      style={{ padding: '6px 10px', fontSize: 13 }}
+                      onClick={() => setDialog({ kind: 'reset', emp: p })}
+                      disabled={busy}
+                      title="Wachtwoord terugzetten op Loqual2026"
+                    >
+                      Reset ww
+                    </button>
+                  )}
                   <button
                     className={'sw' + (p.active ? ' on' : '')}
                     onClick={() => toggleActive(p)}
@@ -362,6 +389,19 @@ export default function AdminAccounts({ employee }) {
         }
         confirmLabel="Ja, verwijderen"
         onConfirm={doDelete}
+        onCancel={() => setDialog(null)}
+      />
+
+      <ConfirmDialog
+        open={dialog?.kind === 'reset'}
+        title="Wachtwoord resetten?"
+        message={
+          dialog?.kind === 'reset'
+            ? `Het wachtwoord van ${dialog.emp.first_name} ${dialog.emp.last_name || ''} wordt teruggezet naar Loqual2026. Bij volgende aanmelding moet er meteen een nieuw wachtwoord ingesteld worden. Geef het tijdelijke wachtwoord persoonlijk door.`
+            : ''
+        }
+        confirmLabel="Ja, resetten"
+        onConfirm={doResetPassword}
         onCancel={() => setDialog(null)}
       />
     </>
