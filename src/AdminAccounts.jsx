@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import Toast from './Toast.jsx'
 
 const ROLES = ['admin', 'shopmanager', 'boekhouding', 'ondernemer', 'flexi', 'jobstudent']
 const ROLE_LABEL = {
@@ -308,7 +309,7 @@ export default function AdminAccounts({ employee }) {
         </button>
       </div>
 
-      {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
+      <Toast msg={msg} onClose={() => setMsg(null)} />
 
       {(dialog?.kind === 'new' || dialog?.kind === 'edit') && (
         <div style={ovl} onClick={() => setDialog(null)}>
