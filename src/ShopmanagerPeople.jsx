@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
 
@@ -23,6 +23,7 @@ export default function ShopmanagerPeople({ shopId }) {
   const [msg, setMsg] = useState(null)
   const [editor, setEditor] = useState(null)
   const [dialog, setDialog] = useState(null)
+  const [search, setSearch] = useState('')
 
   const load = useCallback(async () => {
     if (!shopId) return
@@ -199,18 +200,47 @@ export default function ShopmanagerPeople({ shopId }) {
 
   const isOnd = editor?.role === 'ondernemer'
 
+  const q = search.trim().toLowerCase()
+  const filteredOndernemers = useMemo(() => {
+    if (!q) return ondernemers
+    return ondernemers.filter((o) => {
+      const s = [o.first_name, o.last_name, o.company_name].filter(Boolean).join(' ').toLowerCase()
+      return s.includes(q)
+    })
+  }, [ondernemers, q])
+  const filteredWorkers = useMemo(() => {
+    if (!q) return workers
+    return workers.filter((w) => {
+      const s = [w.first_name, w.last_name].filter(Boolean).join(' ').toLowerCase()
+      return s.includes(q)
+    })
+  }, [workers, q])
+
   return (
     <>
-      <button className="btn btn-primary btn-block" onClick={addPerson} style={{ marginBottom: 16 }}>
+      <button className="btn btn-primary btn-block" onClick={addPerson} style={{ marginBottom: 12 }}>
         + Persoon toevoegen
       </button>
 
+      <input
+        className="input fw"
+        type="text"
+        placeholder="Zoek op naam of bedrijf…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        style={{ marginBottom: 16 }}
+      />
+
       <div className="card">
-        <div className="section-title">Ondernemers ({ondernemers.length})</div>
+        <div className="section-title">
+          Ondernemers ({q ? `${filteredOndernemers.length} / ${ondernemers.length}` : ondernemers.length})
+        </div>
         {ondernemers.length === 0 ? (
           <div className="muted">Nog geen ondernemers in deze winkel.</div>
+        ) : filteredOndernemers.length === 0 ? (
+          <div className="muted">Geen ondernemers gevonden.</div>
         ) : (
-          ondernemers.map((o) => (
+          filteredOndernemers.map((o) => (
             <div className="row-item" key={o.linkId}>
               <span>
                 <strong>{o.first_name} {o.last_name}</strong>
@@ -233,11 +263,15 @@ export default function ShopmanagerPeople({ shopId }) {
       </div>
 
       <div className="card">
-        <div className="section-title">Flexi's & jobstudenten ({workers.length})</div>
+        <div className="section-title">
+          Flexi's & jobstudenten ({q ? `${filteredWorkers.length} / ${workers.length}` : workers.length})
+        </div>
         {workers.length === 0 ? (
           <div className="muted">Nog geen flexi's of jobstudenten.</div>
+        ) : filteredWorkers.length === 0 ? (
+          <div className="muted">Geen flexi's of jobstudenten gevonden.</div>
         ) : (
-          workers.map((w) => (
+          filteredWorkers.map((w) => (
             <div className="row-item" key={w.id}>
               <span>
                 <strong style={{ opacity: w.active ? 1 : 0.5 }}>{w.first_name} {w.last_name}</strong>
