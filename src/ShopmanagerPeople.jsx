@@ -194,12 +194,6 @@ export default function ShopmanagerPeople({ shopId }) {
     }
   }
 
-  if (loading) {
-    return <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
-  }
-
-  const isOnd = editor?.role === 'ondernemer'
-
   const q = search.trim().toLowerCase()
   const filteredOndernemers = useMemo(() => {
     if (!q) return ondernemers
@@ -215,6 +209,12 @@ export default function ShopmanagerPeople({ shopId }) {
       return s.includes(q)
     })
   }, [workers, q])
+
+  if (loading) {
+    return <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
+  }
+
+  const isOnd = editor?.role === 'ondernemer'
 
   return (
     <>
