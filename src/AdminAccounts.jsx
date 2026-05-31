@@ -149,33 +149,32 @@ export default function AdminAccounts({ employee }) {
 
   async function bulkCreate(ids) {
     if (!ids.length) return
-    const pwd = window.prompt(
-      `Welk tijdelijk wachtwoord wil je instellen voor deze ${ids.length} medewerker(s)?\n\nIedereen krijgt hetzelfde wachtwoord en wordt bij eerste login gevraagd om er zelf een te kiezen.`,
-      'Loqual2026',
+    const ok = window.confirm(
+      `Voor ${ids.length} medewerker(s) wordt een login aangemaakt met tijdelijk wachtwoord "Loqual2026". Iedereen wordt bij eerste login gevraagd om zelf een nieuw wachtwoord te kiezen.\n\nDoorgaan?`,
     )
-    if (pwd === null) return
-    if (pwd.length < 6) { setMsg({ kind: 'err', text: 'Wachtwoord moet minstens 6 tekens lang zijn.' }); return }
+    if (!ok) return
     setBusy(true); setMsg(null)
-    try {
-      const { data, error } = await supabase.functions.invoke('bulk-create-logins', {
-        body: { employee_ids: ids, password: pwd },
-      })
-      if (error) throw error
-      const r = data || {}
-      const bits = []
-      if (r.created) bits.push(`${r.created} aangemaakt`)
-      if (r.linked) bits.push(`${r.linked} bestaande gekoppeld`)
-      if (r.failed) bits.push(`${r.failed} mislukt`)
-      setMsg({
-        kind: r.failed ? 'err' : 'good',
-        text: `${bits.join(', ') || 'Geen wijzigingen'}. Tijdelijk wachtwoord: "${r.password || pwd}".${r.errors?.length ? ' Fout: ' + r.errors.slice(0, 3).join('; ') : ''}`,
-      })
-      await load()
-    } catch (e) {
-      setMsg({ kind: 'err', text: e?.message || 'Aanmaken mislukt.' })
-    } finally {
-      setBusy(false)
+    let created = 0, failed = 0
+    const errors = []
+    for (const id of ids) {
+      try {
+        const { error } = await supabase.rpc('admin_create_login', { p_employee_id: id })
+        if (error) throw error
+        created += 1
+      } catch (e) {
+        failed += 1
+        if (errors.length < 3) errors.push(e?.message || 'onbekende fout')
+      }
     }
+    const bits = []
+    if (created) bits.push(`${created} aangemaakt`)
+    if (failed) bits.push(`${failed} mislukt`)
+    setMsg({
+      kind: failed ? 'err' : 'good',
+      text: `${bits.join(', ') || 'Geen wijzigingen'}. Tijdelijk wachtwoord: "Loqual2026".${errors.length ? ' Fout: ' + errors.join('; ') : ''}`,
+    })
+    await load()
+    setBusy(false)
   }
 
   async function invite(ids, label) {
@@ -210,6 +209,9 @@ export default function AdminAccounts({ employee }) {
 
   return (
     <>
+      <button className="btn btn-primary btn-block" onClick={openNew} disabled={busy} style={{ marginBottom: 12 }}>
+        + Account toevoegen
+      </button>
       <input
         className="input fw"
         type="text"
@@ -331,9 +333,6 @@ export default function AdminAccounts({ employee }) {
             )
           })
         )}
-        <button className="btn btn-primary btn-block" style={{ marginTop: 12 }} onClick={openNew} disabled={busy}>
-          + Account toevoegen
-        </button>
       </div>
 
       <Toast msg={msg} onClose={() => setMsg(null)} />
