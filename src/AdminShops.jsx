@@ -7,11 +7,12 @@ export default function AdminShops() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [dialog, setDialog] = useState(null) // null | {kind:'new'} | {kind:'edit', id}
-  const [form, setForm] = useState({ name: '', address: '', active: true })
+  const [form, setForm] = useState({ name: '', address: '', active: true, owner_employee_id: null })
+  const [ownerOptions, setOwnerOptions] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.from('shops').select('id, name, address, active').order('name')
+    const { data } = await supabase.from('shops').select('id, name, address, active, owner_employee_id').order('name')
     setShops(data || [])
     setLoading(false)
   }, [])
@@ -21,14 +22,24 @@ export default function AdminShops() {
   }, [load])
 
   function openNew() {
-    setForm({ name: '', address: '', active: true })
+    setForm({ name: '', address: '', active: true, owner_employee_id: null })
+    setOwnerOptions([])
     setDialog({ kind: 'new' })
     setMsg(null)
   }
-  function openEdit(s) {
-    setForm({ name: s.name, address: s.address || '', active: s.active })
+  async function openEdit(s) {
+    setForm({ name: s.name, address: s.address || '', active: s.active, owner_employee_id: s.owner_employee_id || null })
     setDialog({ kind: 'edit', id: s.id })
     setMsg(null)
+    const { data } = await supabase
+      .from('entrepreneur_shops')
+      .select('entrepreneur_id, employees!inner(id, first_name, last_name, company_name, active)')
+      .eq('shop_id', s.id)
+    const options = (data || [])
+      .map((r) => r.employees)
+      .filter((e) => e && e.active)
+      .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
+    setOwnerOptions(options)
   }
 
   async function save() {
@@ -46,7 +57,12 @@ export default function AdminShops() {
       } else {
         const { error } = await supabase
           .from('shops')
-          .update({ name: form.name.trim(), address: form.address.trim() || null, active: form.active })
+          .update({
+            name: form.name.trim(),
+            address: form.address.trim() || null,
+            active: form.active,
+            owner_employee_id: form.owner_employee_id || null,
+          })
           .eq('id', dialog.id)
         if (error) throw error
       }
@@ -126,6 +142,29 @@ export default function AdminShops() {
                 <span className="knob" />
               </button>
             </div>
+            {dialog.kind === 'edit' && (
+              <>
+                <label className="flbl" style={{ marginTop: 14 }}>Eigenaar-ondernemer (voorrang bij planning)</label>
+                <select
+                  className="input fw"
+                  value={form.owner_employee_id || ''}
+                  onChange={(e) => setForm({ ...form, owner_employee_id: e.target.value || null })}
+                >
+                  <option value="">— geen eigenaar —</option>
+                  {ownerOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {[o.first_name, o.last_name].filter(Boolean).join(' ')}
+                      {o.company_name ? ` · ${o.company_name}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {ownerOptions.length === 0 && (
+                  <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+                    Nog geen ondernemers gekoppeld aan deze winkel.
+                  </div>
+                )}
+              </>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button className="btn" onClick={() => setDialog(null)}>Annuleren</button>
               <button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Bezig…' : 'Bewaren'}</button>
