@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
+import ReleaseStatusBanner from './ReleaseStatusBanner.jsx'
 import ShopmanagerPlanning from './ShopmanagerPlanning.jsx'
 import ShopmanagerShop from './ShopmanagerShop.jsx'
 import ShopmanagerPeople from './ShopmanagerPeople.jsx'
@@ -77,6 +78,8 @@ export default function ShopmanagerHome({ employee, onLogout }) {
           {managedShops[0].name}
         </div>
       )}
+
+      <ReleaseStatusBanner shopId={shopId} />
 
       <div className="tabs">
         <button className={'tab' + (tab === 'planning' ? ' active' : '')} onClick={() => setTab('planning')}>
