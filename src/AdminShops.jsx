@@ -7,12 +7,12 @@ export default function AdminShops() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [dialog, setDialog] = useState(null) // null | {kind:'new'} | {kind:'edit', id}
-  const [form, setForm] = useState({ name: '', address: '', active: true, owner_employee_id: null })
+  const [form, setForm] = useState({ name: '', address: '', active: true, owner_employee_id: null, live_from: '' })
   const [ownerOptions, setOwnerOptions] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.from('shops').select('id, name, address, active, owner_employee_id').order('name')
+    const { data } = await supabase.from('shops').select('id, name, address, active, owner_employee_id, live_from').order('name')
     setShops(data || [])
     setLoading(false)
   }, [])
@@ -22,13 +22,19 @@ export default function AdminShops() {
   }, [load])
 
   function openNew() {
-    setForm({ name: '', address: '', active: true, owner_employee_id: null })
+    setForm({ name: '', address: '', active: true, owner_employee_id: null, live_from: '' })
     setOwnerOptions([])
     setDialog({ kind: 'new' })
     setMsg(null)
   }
   async function openEdit(s) {
-    setForm({ name: s.name, address: s.address || '', active: s.active, owner_employee_id: s.owner_employee_id || null })
+    setForm({
+      name: s.name,
+      address: s.address || '',
+      active: s.active,
+      owner_employee_id: s.owner_employee_id || null,
+      live_from: s.live_from || '',
+    })
     setDialog({ kind: 'edit', id: s.id })
     setMsg(null)
     const { data } = await supabase
@@ -52,7 +58,12 @@ export default function AdminShops() {
       if (dialog.kind === 'new') {
         const { error } = await supabase
           .from('shops')
-          .insert({ name: form.name.trim(), address: form.address.trim() || null, active: form.active })
+          .insert({
+            name: form.name.trim(),
+            address: form.address.trim() || null,
+            active: form.active,
+            live_from: form.live_from || null,
+          })
         if (error) throw error
       } else {
         const { error } = await supabase
@@ -62,6 +73,7 @@ export default function AdminShops() {
             address: form.address.trim() || null,
             active: form.active,
             owner_employee_id: form.owner_employee_id || null,
+            live_from: form.live_from || null,
           })
           .eq('id', dialog.id)
         if (error) throw error
@@ -136,6 +148,16 @@ export default function AdminShops() {
             <input className="input fw" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <label className="flbl" style={{ marginTop: 10 }}>Adres (optioneel)</label>
             <input className="input fw" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            <label className="flbl" style={{ marginTop: 10 }}>Startdatum (eerste actieve maand)</label>
+            <input
+              className="input fw"
+              type="date"
+              value={form.live_from}
+              onChange={(e) => setForm({ ...form, live_from: e.target.value })}
+            />
+            <div className="hint" style={{ marginTop: 4, marginBottom: 0 }}>
+              Maanden vóór deze datum worden niet vrijgegeven. Laat leeg voor geen beperking.
+            </div>
             <div className="row-item" style={{ marginTop: 12 }}>
               <span>Actief</span>
               <button className={'sw' + (form.active ? ' on' : '')} onClick={() => setForm({ ...form, active: !form.active })} aria-label="Actief">
