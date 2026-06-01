@@ -35,6 +35,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
   const [pub, setPub] = useState(null)
   const [bonusInfo, setBonusInfo] = useState(null)
   const [subStatus, setSubStatus] = useState([])
+  const [buyouts, setBuyouts] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -151,6 +152,20 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           return a.name.localeCompare(b.name)
         })
       setSubStatus(statusList)
+
+      const { data: bo } = await supabase
+        .from('buyouts')
+        .select('entrepreneur_id, employees!inner(first_name, last_name, company_name)')
+        .eq('shop_id', shopId)
+        .eq('month_start', monthStart)
+      const boList = (bo || [])
+        .map((r) => ({
+          id: r.entrepreneur_id,
+          name: [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ') || 'Onbekend',
+          company: r.employees?.company_name || null,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      setBuyouts(boList)
 
       const { data: rsum } = await supabase.rpc('redistribution_summary', { p_shop: shopId, p_month: monthStart })
       const rs = Array.isArray(rsum) ? rsum[0] : rsum
@@ -483,7 +498,17 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           {monthIsPast ? (
             <div className="hint">Deze maand is voorbij — alleen-lezen. Je ziet hier wie wanneer werkte; wijzigen kan niet meer.</div>
           ) : (
-            <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen.</div>
+            <>
+              <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen.</div>
+              <button
+                className="btn btn-primary btn-block"
+                style={{ marginTop: 8, marginBottom: 12 }}
+                onClick={doShuffle}
+                disabled={busy}
+              >
+                {busy ? 'Bezig…' : 'Shuffle lege dagen'}
+              </button>
+            </>
           )}
 
           {subStatus.length > 0 &&
@@ -510,6 +535,23 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                 </div>
               )
             })()}
+
+          {buyouts.length > 0 && (
+            <div className="card">
+              <div className="section-title">Afkopen deze maand ({buyouts.length})</div>
+              <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                Deze ondernemers hebben hun uitbatingsdag in deze winkel afgekocht. Ze tellen niet mee voor de verplichte invulling, en ze komen niet in de planning.
+              </div>
+              {buyouts.map((b) => (
+                <div className="row-item" key={b.id}>
+                  <span>
+                    {b.name}
+                    {b.company ? <span className="muted" style={{ marginLeft: 6 }}>· {b.company}</span> : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {!monthIsPast && (
             <>
@@ -572,14 +614,6 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
             )}
           </div>
 
-          <button
-            className="btn btn-primary btn-block"
-            style={{ marginTop: 8 }}
-            onClick={doShuffle}
-            disabled={busy}
-          >
-            {busy ? 'Bezig…' : 'Shuffle lege dagen'}
-          </button>
           <button
             className="btn btn-block"
             style={{ marginTop: 10 }}

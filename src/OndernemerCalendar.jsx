@@ -395,12 +395,21 @@ export default function OndernemerCalendar({ employee, onLogout }) {
 
           {shops.some((s) => s.must_operate) && (
             <div className="card">
-              <div className="section-title">Uitbatingsdag afkopen (€200)</div>
+              <div className="section-title">Jouw uitbatingsdagen per winkel</div>
+              <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                Zet de schakelaar aan om een dag af te kopen (€200). Een afgekochte winkel telt niet meer mee voor je minimum aantal beschikbaarheden.
+              </div>
               {shops
                 .filter((s) => s.must_operate)
                 .map((s) => (
                   <div className="row-item" key={s.shop_id}>
-                    <span>{s.name}</span>
+                    <span>
+                      {s.name}
+                      <span className="muted" style={{ marginLeft: 8, fontSize: 13 }}>
+                        · {s.operate_days || 1} {(s.operate_days || 1) === 1 ? 'dag' : 'dagen'}
+                        {buyouts.has(s.shop_id) ? ' (afgekocht)' : ''}
+                      </span>
+                    </span>
                     <button
                       className={'sw' + (buyouts.has(s.shop_id) ? ' on' : '')}
                       onClick={() => toggleBuyout(s.shop_id)}
@@ -411,7 +420,6 @@ export default function OndernemerCalendar({ employee, onLogout }) {
                     </button>
                   </div>
                 ))}
-              <div className="hint">Een afgekochte winkel telt niet meer mee voor je minimum.</div>
             </div>
           )}
 
