@@ -8,6 +8,7 @@ import BonusOverview from './BonusOverview.jsx'
 import AdminExtraBuyout from './AdminExtraBuyout.jsx'
 import AdminEmails from './AdminEmails.jsx'
 import AdminReleases from './AdminReleases.jsx'
+import AdminOverviews from './AdminOverviews.jsx'
 
 export default function AdminHome({ employee, onLogout }) {
   const [tab, setTab] = useState('winkels')
@@ -41,6 +42,9 @@ export default function AdminHome({ employee, onLogout }) {
         <button className={'tab' + (tab === 'releases' ? ' active' : '')} onClick={() => setTab('releases')}>
           Vrijgaves
         </button>
+        <button className={'tab' + (tab === 'overzichten' ? ' active' : '')} onClick={() => setTab('overzichten')}>
+          Overzichten
+        </button>
       </div>
 
       {tab === 'winkels' ? <AdminShops />
@@ -50,6 +54,7 @@ export default function AdminHome({ employee, onLogout }) {
         : tab === 'bonus' ? <BonusOverview filterManagerId={null} />
         : tab === 'extra' ? <AdminExtraBuyout />
         : tab === 'releases' ? <AdminReleases />
+        : tab === 'overzichten' ? <AdminOverviews />
         : <AdminEmails />}
     </Shell>
   )
