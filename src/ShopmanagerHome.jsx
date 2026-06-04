@@ -7,6 +7,7 @@ import ShopmanagerShop from './ShopmanagerShop.jsx'
 import ShopmanagerPeople from './ShopmanagerPeople.jsx'
 import ShopmanagerAvailability from './ShopmanagerAvailability.jsx'
 import BonusOverview from './BonusOverview.jsx'
+import TeamCalendar from './TeamCalendar.jsx'
 
 export default function ShopmanagerHome({ employee, onLogout }) {
   const [managedShops, setManagedShops] = useState([])
@@ -97,6 +98,9 @@ export default function ShopmanagerHome({ employee, onLogout }) {
         <button className={'tab' + (tab === 'bonus' ? ' active' : '')} onClick={() => setTab('bonus')}>
           Bonus
         </button>
+        <button className={'tab' + (tab === 'andere' ? ' active' : '')} onClick={() => setTab('andere')}>
+          Andere winkels
+        </button>
       </div>
 
       {tab === 'planning' ? (
@@ -107,6 +111,8 @@ export default function ShopmanagerHome({ employee, onLogout }) {
         <ShopmanagerPeople key={'m-' + shopId} shopId={shopId} />
       ) : tab === 'beschikbaarheden' ? (
         <ShopmanagerAvailability key={'b-' + shopId} shopId={shopId} />
+      ) : tab === 'andere' ? (
+        <TeamCalendar employee={employee} allShops />
       ) : (
         <BonusOverview filterManagerId={employee.id} />
       )}

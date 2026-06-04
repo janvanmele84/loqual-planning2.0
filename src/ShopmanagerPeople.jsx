@@ -18,6 +18,7 @@ const ROLE_LABEL = { flexi: 'Flexi', jobstudent: 'Jobstudent', ondernemer: 'Onde
 export default function ShopmanagerPeople({ shopId }) {
   const [ondernemers, setOndernemers] = useState([])
   const [workers, setWorkers] = useState([])
+  const [allOndernemers, setAllOndernemers] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -61,6 +62,14 @@ export default function ShopmanagerPeople({ shopId }) {
         .in('role', ['flexi', 'jobstudent'])
         .order('first_name')
       setWorkers(w || [])
+
+      const { data: ao } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, email, company_name')
+        .eq('role', 'ondernemer')
+        .eq('active', true)
+        .order('first_name')
+      setAllOndernemers(ao || [])
     } catch (e) {
       setMsg({ kind: 'err', text: 'Laden mislukt.' })
     } finally {
@@ -247,7 +256,7 @@ export default function ShopmanagerPeople({ shopId }) {
                 {o.company_name ? <span className="muted"> · {o.company_name}</span> : null}
                 <br />
                 <span className={'tag ' + (o.must_operate ? 'bevestigd' : 'niet')} style={{ fontSize: 10 }}>
-                  {o.must_operate ? (o.operate_days > 1 ? `${o.operate_days} uitbatingsdagen` : 'Uitbatingsplicht') : 'Geen uitbatingsplicht'}
+                  {o.must_operate ? (o.operate_days > 1 ? `${o.operate_days} uitbatingsdagen` : '1 uitbatingsdag') : 'Standaardcommissie'}
                 </span>
                 <span className="muted" style={{ fontSize: 12, marginLeft: 8 }}>
                   vanaf {fmtDate(o.start_date)}{o.end_date ? ` tot ${fmtDate(o.end_date)}` : ''}
@@ -300,33 +309,84 @@ export default function ShopmanagerPeople({ shopId }) {
             {editor.mode === 'add' ? (
               <>
                 <label className="flbl">Type</label>
-                <select className="input fw" value={editor.role} onChange={(e) => setEditor({ ...editor, role: e.target.value })}>
+                <select className="input fw" value={editor.role} onChange={(e) => setEditor({ ...editor, role: e.target.value, picked_id: '' })}>
                   <option value="ondernemer">Ondernemer</option>
                   <option value="flexi">Flexi</option>
                   <option value="jobstudent">Jobstudent</option>
                 </select>
+
+                {editor.role === 'ondernemer' && (() => {
+                  const linkedIds = new Set(ondernemers.map((o) => o.employeeId))
+                  const choices = allOndernemers.filter((o) => !linkedIds.has(o.id))
+                  return (
+                    <>
+                      <label className="flbl" style={{ marginTop: 10 }}>Bestaande ondernemer kiezen (of nieuw aanmaken)</label>
+                      <select
+                        className="input fw"
+                        value={editor.picked_id || ''}
+                        onChange={(ev) => {
+                          const pid = ev.target.value
+                          if (!pid) {
+                            setEditor({ ...editor, picked_id: '', first_name: '', last_name: '', email: '', company_name: '' })
+                          } else {
+                            const p = choices.find((c) => c.id === pid)
+                            if (p) {
+                              setEditor({
+                                ...editor,
+                                picked_id: pid,
+                                first_name: p.first_name || '',
+                                last_name: p.last_name || '',
+                                email: p.email || '',
+                                company_name: p.company_name || '',
+                              })
+                            }
+                          }
+                        }}
+                      >
+                        <option value="">— nieuwe ondernemer aanmaken —</option>
+                        {choices.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {[o.first_name, o.last_name].filter(Boolean).join(' ')}
+                            {o.company_name ? ` · ${o.company_name}` : ''}
+                            {o.email ? ` · ${o.email}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="hint" style={{ marginTop: 4 }}>
+                        {editor.picked_id
+                          ? 'Deze ondernemer wordt gekoppeld aan deze winkel — naam en e-mail kunnen niet hier gewijzigd worden.'
+                          : 'Vul hieronder de gegevens in om een nieuwe ondernemer te registreren. E-mailadres moet uniek zijn.'}
+                      </div>
+                    </>
+                  )
+                })()}
               </>
             ) : (
               <div className="muted" style={{ marginBottom: 4 }}>{ROLE_LABEL[editor.role] || editor.role}</div>
             )}
 
             <label className="flbl">Voornaam</label>
-            <input className="input fw" value={editor.first_name} onChange={(e) => setEditor({ ...editor, first_name: e.target.value })} />
+            <input className="input fw" value={editor.first_name} disabled={!!editor.picked_id} onChange={(e) => setEditor({ ...editor, first_name: e.target.value })} />
 
             <label className="flbl">Achternaam</label>
-            <input className="input fw" value={editor.last_name} onChange={(e) => setEditor({ ...editor, last_name: e.target.value })} />
+            <input className="input fw" value={editor.last_name} disabled={!!editor.picked_id} onChange={(e) => setEditor({ ...editor, last_name: e.target.value })} />
 
             <label className="flbl">E-mail</label>
-            <input className="input fw" type="email" value={editor.email} onChange={(e) => setEditor({ ...editor, email: e.target.value })} />
+            <input className="input fw" type="email" value={editor.email} disabled={!!editor.picked_id} onChange={(e) => setEditor({ ...editor, email: e.target.value })} />
 
             {isOnd ? (
               <>
                 <label className="flbl">Bedrijfsnaam</label>
-                <input className="input fw" value={editor.company_name} onChange={(e) => setEditor({ ...editor, company_name: e.target.value })} />
+                <input className="input fw" value={editor.company_name} disabled={!!editor.picked_id} onChange={(e) => setEditor({ ...editor, company_name: e.target.value })} />
 
                 <div className="row-item" style={{ marginTop: 8 }}>
-                  <span>Uitbatingsplicht</span>
-                  <button className={'sw' + (editor.must_operate ? ' on' : '')} onClick={() => setEditor({ ...editor, must_operate: !editor.must_operate })} aria-label="Uitbatingsplicht">
+                  <span>
+                    Hoger commissiepercentage
+                    <div className="muted" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
+                      Aan = ondernemer draagt een hogere commissie af (35 %, 50 %, inkoop) en moet daarvoor uitbatingsdagen doen. Uit = standaardpercentage, géén uitbatingsdagen. Afkoop is iets anders en regelt de ondernemer zelf per maand.
+                    </div>
+                  </span>
+                  <button className={'sw' + (editor.must_operate ? ' on' : '')} onClick={() => setEditor({ ...editor, must_operate: !editor.must_operate })} aria-label="Hoger commissiepercentage">
                     <span className="knob" />
                   </button>
                 </div>

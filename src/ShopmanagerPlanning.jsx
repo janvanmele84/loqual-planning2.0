@@ -114,15 +114,32 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       const br = (bonusRows || []).find((r) => r.shop_id === shopId)
       setBonusInfo(br ? { aantal: br.aantal, drempel: br.drempel } : null)
 
-      // Wie moet nog beschikbaarheden doorgeven? (ondernemers van deze winkel)
+      // Wie moet nog beschikbaarheden doorgeven? (ondernemers met uitbatingsplicht in deze winkel, niet afgekocht)
       const { data: es } = await supabase
         .from('entrepreneur_shops')
-        .select('entrepreneur_id, start_date, end_date, employees(first_name, last_name)')
+        .select('entrepreneur_id, start_date, end_date, must_operate, employees(first_name, last_name)')
         .eq('shop_id', shopId)
+
+      const { data: bo } = await supabase
+        .from('buyouts')
+        .select('entrepreneur_id, employees!inner(first_name, last_name, company_name)')
+        .eq('shop_id', shopId)
+        .eq('month_start', monthStart)
+      const boIds = new Set((bo || []).map((r) => r.entrepreneur_id))
+      const boList = (bo || [])
+        .map((r) => ({
+          id: r.entrepreneur_id,
+          name: [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ') || 'Onbekend',
+          company: r.employees?.company_name || null,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      setBuyouts(boList)
+
       const activeEnt = (es || []).filter(
-        (r) => r.start_date <= monthEnd && (!r.end_date || r.end_date >= monthStart),
+        (r) => r.must_operate
+          && r.start_date <= monthEnd && (!r.end_date || r.end_date >= monthStart)
+          && !boIds.has(r.entrepreneur_id),
       )
-      // ontdubbel: één rij per ondernemer (ze kunnen meerdere rijen hebben)
       const byEnt = {}
       activeEnt.forEach((r) => {
         if (!byEnt[r.entrepreneur_id]) {
@@ -152,20 +169,6 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           return a.name.localeCompare(b.name)
         })
       setSubStatus(statusList)
-
-      const { data: bo } = await supabase
-        .from('buyouts')
-        .select('entrepreneur_id, employees!inner(first_name, last_name, company_name)')
-        .eq('shop_id', shopId)
-        .eq('month_start', monthStart)
-      const boList = (bo || [])
-        .map((r) => ({
-          id: r.entrepreneur_id,
-          name: [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ') || 'Onbekend',
-          company: r.employees?.company_name || null,
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-      setBuyouts(boList)
 
       const { data: rsum } = await supabase.rpc('redistribution_summary', { p_shop: shopId, p_month: monthStart })
       const rs = Array.isArray(rsum) ? rsum[0] : rsum
@@ -497,6 +500,10 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
 
           {monthIsPast ? (
             <div className="hint">Deze maand is voorbij — alleen-lezen. Je ziet hier wie wanneer werkte; wijzigen kan niet meer.</div>
+          ) : pub?.status === 'published' ? (
+            <>
+              <div className="hint">De planning voor deze maand is al gepubliceerd. Shuffelen is niet meer mogelijk; manuele aanpassingen kunnen wel — tik op een dag.</div>
+            </>
           ) : (
             <>
               <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen.</div>

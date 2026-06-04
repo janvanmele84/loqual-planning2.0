@@ -8,7 +8,7 @@ const ymd = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1)
 
-export default function TeamCalendar({ employee }) {
+export default function TeamCalendar({ employee, allShops = false }) {
   const today = new Date()
   const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1)
   const [shops, setShops] = useState([])
@@ -24,14 +24,25 @@ export default function TeamCalendar({ employee }) {
   useEffect(() => {
     let active = true
     ;(async () => {
-      const { data } = await supabase.rpc('my_schedule_shops')
+      let data
+      if (allShops) {
+        const { data: d } = await supabase
+          .from('shops')
+          .select('id, name')
+          .eq('active', true)
+          .order('name')
+        data = d
+      } else {
+        const { data: d } = await supabase.rpc('my_schedule_shops')
+        data = d
+      }
       if (!active) return
       setShops(data || [])
       if ((data || []).length && !shopId) setShopId(data[0].id)
       if (!(data || []).length) setLoading(false)
     })()
     return () => { active = false }
-  }, []) // eslint-disable-line
+  }, [allShops]) // eslint-disable-line
 
   const load = useCallback(async () => {
     if (!shopId) return
