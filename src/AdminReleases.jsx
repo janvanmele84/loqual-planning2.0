@@ -99,18 +99,18 @@ export default function AdminReleases() {
                     return <td key={m} style={{ ...td, ...cell.green }} title={`Vrijgegeven op ${r.released_at?.slice(0, 10) || ''}`}>✓</td>
                   }
                   if (r.status === 'auto') {
-                    return <td key={m} style={{ ...td, ...cell.orange }} title={`Automatisch vrijgegeven (deadline ${dateShort(r.deadline)})`}>auto</td>
+                    return <td key={m} style={{ ...td, ...cell.orange }} title={`Automatisch vrijgegeven (deadline ${dateShort(r.release_deadline)})`}>auto</td>
                   }
                   if (r.status === 'overdue') {
                     return (
-                      <td key={m} style={{ ...td, ...cell.red }} title={`Achterstand sinds ${dateShort(r.deadline)}`}>
+                      <td key={m} style={{ ...td, ...cell.red }} title={`Achterstand sinds ${dateShort(r.release_deadline)}`}>
                         <button className="btn" style={{ padding: '2px 6px', fontSize: 11 }} disabled={busy} onClick={() => manualRelease(s.id, m)}>geef vrij</button>
                       </td>
                     )
                   }
                   return (
-                    <td key={m} style={{ ...td, ...cell.blue }} title={`Te doen tegen ${dateShort(r.deadline)} (${r.days_until_deadline} dagen)`}>
-                      {r.days_until_deadline}d
+                    <td key={m} style={{ ...td, ...cell.blue }} title={`Te doen tegen ${dateShort(r.release_deadline)} (${r.days_until_release} dagen)`}>
+                      {r.days_until_release}d
                     </td>
                   )
                 })}
