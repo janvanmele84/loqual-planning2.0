@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
+import MyDeadlineBanner from './MyDeadlineBanner.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import TeamCalendar from './TeamCalendar.jsx'
 
@@ -334,6 +335,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
 
   return (
     <Shell employee={employee} onLogout={onLogout}>
+      <MyDeadlineBanner employee={employee} />
       <div className="tabs">
         <button className={'tab' + (view === 'mine' ? ' active' : '')} onClick={() => setView('mine')}>
           Mijn beschikbaarheid

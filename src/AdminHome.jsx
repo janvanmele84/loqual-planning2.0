@@ -9,6 +9,7 @@ import AdminExtraBuyout from './AdminExtraBuyout.jsx'
 import AdminEmails from './AdminEmails.jsx'
 import AdminReleases from './AdminReleases.jsx'
 import AdminOverviews from './AdminOverviews.jsx'
+import AdminActionBanner from './AdminActionBanner.jsx'
 
 export default function AdminHome({ employee, onLogout }) {
   const [tab, setTab] = useState('winkels')
@@ -16,6 +17,8 @@ export default function AdminHome({ employee, onLogout }) {
   return (
     <Shell employee={employee} onLogout={onLogout}>
       <div className="section-title" style={{ marginBottom: 12 }}>Beheer</div>
+
+      <AdminActionBanner />
 
       <div className="tabs">
         <button className={'tab' + (tab === 'winkels' ? ' active' : '')} onClick={() => setTab('winkels')}>

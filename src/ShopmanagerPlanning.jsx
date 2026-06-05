@@ -163,7 +163,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         })
       }
       const statusList = entList
-        .map((e) => ({ name: e.name, status: confirmedSet.has(e.id) ? 'bevestigd' : 'niet' }))
+        .map((e) => ({ id: e.id, name: e.name, status: confirmedSet.has(e.id) ? 'bevestigd' : 'niet' }))
         .sort((a, b) => {
           if (a.status !== b.status) return a.status === 'niet' ? -1 : 1
           return a.name.localeCompare(b.name)
@@ -189,8 +189,26 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     setShortList(null)
   }, [monthStart, shopId])
 
-  async function doShuffle() {
-    if (!shopId) return
+  async function markHandled(employeeId, name) {
+    if (!window.confirm(`${name} markeren als afgehandeld voor deze maand? Komt niet meer in de planning en verschijnt niet meer in de lijst van niet-bevestigde mensen.`)) return
+    setBusy(true); setMsg(null)
+    try {
+      const { error } = await supabase.rpc('mark_entrepreneur_handled', {
+        p_employee_id: employeeId,
+        p_shop_id: shopId,
+        p_month: monthStart,
+      })
+      if (error) throw error
+      await load()
+      setMsg({ kind: 'good', text: `${name} is afgehandeld voor deze maand.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Afhandelen mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doShuffle() {    if (!shopId) return
     setBusy(true)
     setMsg(null)
     try {
@@ -520,8 +538,8 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
 
           {subStatus.length > 0 &&
             (() => {
-              const confirmed = subStatus.filter((s) => s.status === 'bevestigd').map((s) => s.name)
-              const pending = subStatus.filter((s) => s.status === 'niet').map((s) => s.name)
+              const confirmed = subStatus.filter((s) => s.status === 'bevestigd')
+              const pending = subStatus.filter((s) => s.status === 'niet')
               return (
                 <div className="card">
                   <div className="section-title">
@@ -529,14 +547,31 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                   </div>
                   <div style={{ marginBottom: 10 }}>
                     <span className="tag niet">Nog niet doorgegeven ({pending.length})</span>
-                    <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>
-                      {pending.length ? pending.join(', ') : 'Iedereen heeft doorgegeven ✓'}
-                    </div>
+                    {pending.length === 0 ? (
+                      <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>Iedereen heeft doorgegeven ✓</div>
+                    ) : (
+                      <div style={{ marginTop: 6 }}>
+                        {pending.map((p) => (
+                          <div className="row-item" key={p.id}>
+                            <span>{p.name}</span>
+                            <button
+                              className="btn"
+                              style={{ padding: '4px 10px', fontSize: 12 }}
+                              disabled={busy}
+                              onClick={() => markHandled(p.id, p.name)}
+                              title="Markeer als afgehandeld — bv. dag verschoven naar volgende maand of zelf ingevuld"
+                            >
+                              Afgehandeld
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <span className="tag bevestigd">Bevestigd ({confirmed.length})</span>
                     <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>
-                      {confirmed.length ? confirmed.join(', ') : '—'}
+                      {confirmed.length ? confirmed.map((c) => c.name).join(', ') : '—'}
                     </div>
                   </div>
                 </div>

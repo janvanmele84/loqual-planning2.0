@@ -11,6 +11,7 @@ function dateLabel(iso) {
   const d = new Date(iso)
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`
 }
+function daysWord(n) { return n === 1 ? 'dag' : 'dagen' }
 
 export default function ReleaseStatusBanner({ shopId }) {
   const [items, setItems] = useState([])
@@ -24,10 +25,13 @@ export default function ReleaseStatusBanner({ shopId }) {
       .select('*')
       .eq('shop_id', shopId)
       .order('month_start')
+    // Toon maanden waar een actie of melding nuttig is
     const visible = (data || []).filter((d) => {
+      if (d.status === 'published') return false
       if (d.status === 'overdue') return true
       if (d.status === 'auto') return true
-      if (d.status === 'pending') return d.days_until_deadline <= 60
+      if (d.status === 'released') return d.days_until_publish <= 30
+      if (d.status === 'pending') return d.days_until_release <= 60
       return false
     }).slice(0, 4)
     setItems(visible)
@@ -53,35 +57,40 @@ export default function ReleaseStatusBanner({ shopId }) {
   return (
     <div style={{ marginBottom: 14 }}>
       {items.map((it) => {
-        if (it.status === 'overdue') {
+        if (it.status === 'overdue' || it.status === 'pending') {
+          // Vrijgave hangt nog open
+          const isPast = it.status === 'overdue'
           return (
-            <div key={it.month_start} style={styles.row(styles.red)}>
+            <div key={it.month_start} style={styles.row(isPast ? styles.red : styles.green)}>
               <div style={{ flex: 1 }}>
-                <strong>{monthLabel(it.month_start)}</strong> is nog niet vrijgegeven — deadline was {dateLabel(it.deadline)}.
+                <strong>{monthLabel(it.month_start)}</strong> nog vrij te geven
+                {' · '}
+                {isPast
+                  ? `deadline was ${dateLabel(it.release_deadline)}`
+                  : `nog ${it.days_until_release} ${daysWord(it.days_until_release)} (uiterlijk ${dateLabel(it.release_deadline)})`}
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  Voor je vrijgeeft: kijk of de openingsdagen kloppen (verplichte openingen in shoppingcentra, braderieën, feestdagen, …).
+                </div>
               </div>
-              <button className="btn btn-primary" disabled={busy} onClick={() => doRelease(it.month_start)} style={{ whiteSpace: 'nowrap' }}>
-                Vrijgeven nu
+              <button className={isPast ? 'btn btn-primary' : 'btn'} disabled={busy} onClick={() => doRelease(it.month_start)} style={{ whiteSpace: 'nowrap' }}>
+                Vrijgeven
               </button>
             </div>
           )
         }
-        if (it.status === 'auto') {
-          return (
-            <div key={it.month_start} style={styles.row(styles.orange)}>
-              <div style={{ flex: 1 }}>
-                <strong>{monthLabel(it.month_start)}</strong> werd automatisch vrijgegeven (deadline {dateLabel(it.deadline)} overschreden).
-              </div>
-            </div>
-          )
-        }
+        // Vrijgegeven (manueel of auto) — toon volgende deadlines
         return (
-          <div key={it.month_start} style={styles.row(styles.green)}>
+          <div key={it.month_start} style={styles.row(styles.blue)}>
             <div style={{ flex: 1 }}>
-              <strong>{monthLabel(it.month_start)}</strong> nog vrij te geven · deadline {dateLabel(it.deadline)} ({it.days_until_deadline} {it.days_until_deadline === 1 ? 'dag' : 'dagen'}).
+              <strong>{monthLabel(it.month_start)}</strong>
+              {it.status === 'auto' ? ' werd automatisch vrijgegeven' : ' is vrijgegeven'}
+              {' · '}
+              {it.days_until_confirm > 0
+                ? <>medewerkers bevestigen tegen <strong>{dateLabel(it.confirm_deadline)}</strong> (nog {it.days_until_confirm} {daysWord(it.days_until_confirm)})</>
+                : it.days_until_publish > 0
+                  ? <>planning publiceren tegen <strong>{dateLabel(it.publish_deadline)}</strong> (nog {it.days_until_publish} {daysWord(it.days_until_publish)})</>
+                  : <>planning wordt vandaag automatisch gepubliceerd</>}
             </div>
-            <button className="btn" disabled={busy} onClick={() => doRelease(it.month_start)} style={{ whiteSpace: 'nowrap' }}>
-              Vrijgeven
-            </button>
           </div>
         )
       })}
@@ -94,9 +103,11 @@ const styles = {
   red:    { bg: '#fde2e2', fg: '#8a1f1f', border: '#c33' },
   orange: { bg: '#fff4e2', fg: '#8a571f', border: '#d88' },
   green:  { bg: '#e8efe4', fg: '#2f5a31', border: '#6a8e6a' },
+  blue:   { bg: '#e6eef5', fg: '#1f4974', border: '#6a8eaa' },
   row: (p) => ({
     display: 'flex', alignItems: 'center', gap: 10,
     background: p.bg, color: p.fg, border: `1px solid ${p.border}`,
     borderRadius: 12, padding: '10px 14px', marginBottom: 6, fontSize: 14, lineHeight: 1.35,
   }),
 }
+
