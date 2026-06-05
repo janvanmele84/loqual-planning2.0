@@ -14,6 +14,11 @@ function ymd(d) {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
+function monthName(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+}
 function firstOfMonth(d) {
   return new Date(d.getFullYear(), d.getMonth(), 1)
 }
@@ -78,7 +83,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       if (shiftIds.length) {
         const { data: asgs, error: asgErr } = await supabase
           .from('assignments')
-          .select('id, shift_id, employee_id, kind, status, origin_shop_id')
+          .select('id, shift_id, employee_id, kind, status, origin_shop_id, makeup_for_month')
           .in('shift_id', shiftIds)
         if (asgErr) throw asgErr
         const empIds = [...new Set((asgs || []).map((a) => a.employee_id))]
@@ -95,6 +100,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
               kind: a.kind,
               status: a.status,
               origin_shop_id: a.origin_shop_id,
+              makeup_for_month: a.makeup_for_month,
               name: nameById[a.employee_id] || '—',
             }
           }
@@ -189,23 +195,34 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     setShortList(null)
   }, [monthStart, shopId])
 
-  async function markHandled(employeeId, name) {
-    if (!window.confirm(`${name} markeren als afgehandeld voor deze maand? Komt niet meer in de planning en verschijnt niet meer in de lijst van niet-bevestigde mensen.`)) return
+  async function applyHandle(reason, shiftToMonth) {
+    const { employeeId, name } = dialog
+    setDialog(null)
     setBusy(true); setMsg(null)
     try {
       const { error } = await supabase.rpc('mark_entrepreneur_handled', {
         p_employee_id: employeeId,
         p_shop_id: shopId,
         p_month: monthStart,
+        p_reason: reason,
+        p_shift_to_month: shiftToMonth || null,
       })
       if (error) throw error
       await load()
-      setMsg({ kind: 'good', text: `${name} is afgehandeld voor deze maand.` })
+      const tail =
+        reason === 'paid' ? 'gemarkeerd als afgekocht' :
+        reason === 'shifted' ? `verschoven naar ${monthName(shiftToMonth)}` :
+        'afgehandeld'
+      setMsg({ kind: 'good', text: `${name} ${tail}.` })
     } catch (e) {
       setMsg({ kind: 'err', text: e?.message || 'Afhandelen mislukt.' })
     } finally {
       setBusy(false)
     }
+  }
+
+  function markHandled(employeeId, name) {
+    setDialog({ kind: 'handle', employeeId, name })
   }
 
   async function doShuffle() {    if (!shopId) return
@@ -486,7 +503,11 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                   >
                     <span className="num">{c.d}</span>
                     {open && <span className="nm">{a ? a.name : 'leeg'}</span>}
-                    {a?.origin_shop_id ? (
+                    {a?.makeup_for_month ? (
+                      <span className="mark" title={`Inhaaldag voor ${monthName(a.makeup_for_month)}`}>
+                        ⏪
+                      </span>
+                    ) : a?.origin_shop_id ? (
                       <span className="mark" title={`Verplichte dag van ${shopsMap[a.origin_shop_id] || 'andere winkel'}`}>
                         ↳
                       </span>
@@ -678,7 +699,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       )}
 
       <ConfirmDialog
-        open={dialog !== null}
+        open={['publish', 'overmax', 'remove'].includes(dialog?.kind)}
         title={
           dialog?.kind === 'publish'
             ? 'Planning publiceren?'
@@ -711,6 +732,45 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         }
         onCancel={() => setDialog(null)}
       />
+
+      {dialog?.kind === 'handle' && (() => {
+        const cur = new Date(monthStart)
+        const prev = new Date(cur.getFullYear(), cur.getMonth() - 1, 1)
+        const next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
+        const appStart = new Date('2026-07-01')
+        const prevAllowed = prev >= appStart
+        return (
+          <div style={pickerOverlay} onClick={() => setDialog(null)}>
+            <div style={pickerDialog} onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ marginBottom: 6 }}>Afhandelen: {dialog.name}</h3>
+              <div className="muted" style={{ marginBottom: 14, fontSize: 14 }}>
+                Voor {monthName(monthStart)} — kies hoe je deze ondernemer wil afhandelen.
+              </div>
+              <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
+                onClick={() => applyHandle('paid', null)}>
+                Afgekocht (€200)
+              </button>
+              {prevAllowed && (
+                <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
+                  onClick={() => applyHandle('shifted', ymd(prev))}>
+                  Verschuiven naar {MONTHS[prev.getMonth()]} (vorige maand)
+                </button>
+              )}
+              <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
+                onClick={() => applyHandle('shifted', ymd(next))}>
+                Verschuiven naar {MONTHS[next.getMonth()]} (volgende maand)
+              </button>
+              <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
+                onClick={() => applyHandle('other', null)}>
+                Andere afhandeling (manager regelt zelf)
+              </button>
+              <button className="btn btn-block" disabled={busy} onClick={() => setDialog(null)}>
+                Annuleren
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {picker && (
         <div style={pickerOverlay} onClick={() => setPicker(null)}>
