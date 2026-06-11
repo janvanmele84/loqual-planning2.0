@@ -36,7 +36,9 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
   const [month, setMonth] = useState(addMonths(thisMonth, 1))
   const [openSet, setOpenSet] = useState(new Set())
   const [byDate, setByDate] = useState({})
+  const [byDateExtra, setByDateExtra] = useState({})
   const [shiftIdByDate, setShiftIdByDate] = useState({})
+  const [extraShiftIdByDate, setExtraShiftIdByDate] = useState({})
   const [pub, setPub] = useState(null)
   const [bonusInfo, setBonusInfo] = useState(null)
   const [subStatus, setSubStatus] = useState([])
@@ -63,22 +65,30 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     try {
       const { data: sh } = await supabase
         .from('shifts')
-        .select('id, shift_date')
+        .select('id, shift_date, kind')
         .eq('shop_id', shopId)
-        .eq('kind', 'standard')
         .gte('shift_date', monthStart)
         .lte('shift_date', monthEnd)
       const shiftRows = sh || []
+      const stdRows = shiftRows.filter((s) => s.kind === 'standard')
+      const extraRows = shiftRows.filter((s) => s.kind === 'extra')
       const dateByShift = {}
       const idByDate = {}
-      shiftRows.forEach((s) => {
+      const extraIdByDate = {}
+      stdRows.forEach((s) => {
         dateByShift[s.id] = s.shift_date
         idByDate[s.shift_date] = s.id
       })
+      extraRows.forEach((s) => {
+        dateByShift[s.id] = s.shift_date
+        extraIdByDate[s.shift_date] = s.id
+      })
       setShiftIdByDate(idByDate)
-      setOpenSet(new Set(shiftRows.map((s) => s.shift_date)))
+      setExtraShiftIdByDate(extraIdByDate)
+      setOpenSet(new Set(stdRows.map((s) => s.shift_date)))
 
       const map = {}
+      const extraMap = {}
       const shiftIds = shiftRows.map((s) => s.id)
       if (shiftIds.length) {
         const { data: asgs, error: asgErr } = await supabase
@@ -94,19 +104,21 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         }
         ;(asgs || []).forEach((a) => {
           const d = dateByShift[a.shift_id]
-          if (d) {
-            map[d] = {
-              id: a.id,
-              kind: a.kind,
-              status: a.status,
-              origin_shop_id: a.origin_shop_id,
-              makeup_for_month: a.makeup_for_month,
-              name: nameById[a.employee_id] || '—',
-            }
+          if (!d) return
+          const targetMap = extraIdByDate[d] === a.shift_id ? extraMap : map
+          targetMap[d] = {
+            id: a.id,
+            shift_id: a.shift_id,
+            kind: a.kind,
+            status: a.status,
+            origin_shop_id: a.origin_shop_id,
+            makeup_for_month: a.makeup_for_month,
+            name: nameById[a.employee_id] || '—',
           }
         })
       }
       setByDate(map)
+      setByDateExtra(extraMap)
 
       const { data: p } = await supabase
         .from('schedule_publications')
@@ -243,6 +255,27 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     }
   }
 
+  async function onExtraCellClick(dateStr) {
+    if (dateStr < ymd(today)) {
+      setMsg({ kind: 'err', text: 'Dagen in het verleden kun je niet meer wijzigen.' })
+      return
+    }
+    const ax = byDateExtra[dateStr]
+    if (ax) {
+      setDialog({ kind: 'remove', id: ax.id, name: ax.name, date: dateStr, isExtra: true })
+      return
+    }
+    setMsg(null)
+    setPicker({ date: dateStr, isExtra: true, loading: true, candidates: [] })
+    try {
+      const { data, error } = await supabase.rpc('candidates_for_slot', { p_shop: shopId, p_day: dateStr })
+      if (error) throw error
+      setPicker({ date: dateStr, isExtra: true, loading: false, candidates: data || [] })
+    } catch (e) {
+      setPicker({ date: dateStr, isExtra: true, loading: false, candidates: [], error: e?.message || String(e) })
+    }
+  }
+
   async function onCellClick(dateStr) {
     if (!openSet.has(dateStr)) return
     if (dateStr < ymd(today)) {
@@ -265,21 +298,21 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     }
   }
 
-  async function performAssign(c, date) {
-    const shiftId = shiftIdByDate[date]
+  async function performAssign(c, date, isExtra = false) {
+    const shiftId = isExtra ? extraShiftIdByDate[date] : shiftIdByDate[date]
     if (!shiftId) return
     setBusy(true)
     try {
       const { error } = await supabase.from('assignments').insert({
         shift_id: shiftId,
         employee_id: c.employee_id,
-        kind: c.kind,
+        kind: isExtra ? 'extra' : c.kind,
         status: 'manual',
         created_by: employee.id,
       })
       if (error) throw error
       await loadPlanning()
-      setMsg({ kind: 'good', text: `${c.first_name} ingepland op ${date}.` })
+      setMsg({ kind: 'good', text: `${c.first_name} ingepland op ${date}${isExtra ? ' (extra shift)' : ''}.` })
     } catch (e) {
       setMsg({ kind: 'err', text: 'Inplannen mislukt.' })
     } finally {
@@ -289,13 +322,15 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
 
   async function assignCandidate(c) {
     const date = picker?.date
-    if (!shiftIdByDate[date]) return
+    const isExtra = !!picker?.isExtra
+    const targetId = isExtra ? extraShiftIdByDate[date] : shiftIdByDate[date]
+    if (!targetId) return
     setPicker(null)
-    if (c.over_max) {
-      setDialog({ kind: 'overmax', c, date })
+    if (c.over_max && !isExtra) {
+      setDialog({ kind: 'overmax', c, date, isExtra })
       return
     }
-    await performAssign(c, date)
+    await performAssign(c, date, isExtra)
   }
 
   async function doRemove() {
@@ -488,6 +523,8 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                 if (c === null) return <div key={`b${i}`} className="pcell blank" />
                 const open = openSet.has(c.str)
                 const a = byDate[c.str]
+                const ax = byDateExtra[c.str]
+                const hasExtra = !!extraShiftIdByDate[c.str]
                 const past = c.str < todayStr
                 let cls = 'pcell'
                 if (!open) cls += ' closed'
@@ -503,6 +540,16 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                   >
                     <span className="num">{c.d}</span>
                     {open && <span className="nm">{a ? a.name : 'leeg'}</span>}
+                    {hasExtra && (
+                      <span
+                        className="mark"
+                        title={ax ? `Extra shift: ${ax.name}` : 'Extra shift — klik om iemand toe te voegen'}
+                        style={{ position: 'absolute', top: 2, right: 18, fontSize: 11, background: '#cce5ff', color: '#003a75', padding: '0 4px', borderRadius: 4, cursor: 'pointer' }}
+                        onClick={(ev) => { ev.stopPropagation(); onExtraCellClick(c.str) }}
+                      >
+                        {ax ? `+ ${ax.name}` : '+'}
+                      </span>
+                    )}
                     {a?.makeup_for_month ? (
                       <span className="mark" title={`Inhaaldag voor ${monthName(a.makeup_for_month)}`}>
                         ⏪
@@ -775,8 +822,8 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       {picker && (
         <div style={pickerOverlay} onClick={() => setPicker(null)}>
           <div style={pickerDialog} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginBottom: 4 }}>Wie plan je in?</h3>
-            <p className="muted" style={{ margin: '0 0 14px' }}>{picker.date}</p>
+            <h3 style={{ marginBottom: 4 }}>{picker.isExtra ? 'Wie plan je in op de extra shift?' : 'Wie plan je in?'}</h3>
+            <p className="muted" style={{ margin: '0 0 14px' }}>{picker.date}{picker.isExtra ? ' · extra shift' : ''}</p>
             {picker.loading ? (
               <div className="muted">Laden…</div>
             ) : picker.error ? (

@@ -394,9 +394,8 @@ export default function ShopmanagerShop({ shopId }) {
           <div>
             <span className="pubbadge published">Vrijgegeven</span>
             <div className="hint" style={{ marginBottom: 10 }}>
-              Medewerkers kunnen hun beschikbaarheid voor {MONTHS[month.getMonth()]} {month.getFullYear()} ingeven.
+              Medewerkers kunnen hun beschikbaarheid voor {MONTHS[month.getMonth()]} {month.getFullYear()} ingeven. Een vrijgave kan niet meer ingetrokken worden.
             </div>
-            <button className="btn" onClick={doUnrelease} disabled={busy}>Vrijgave intrekken</button>
           </div>
         ) : (
           <div>

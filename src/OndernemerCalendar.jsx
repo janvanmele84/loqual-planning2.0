@@ -447,8 +447,8 @@ export default function OndernemerCalendar({ employee, onLogout }) {
 
           <div className="hint" style={{ textAlign: 'center' }}>
             {locked
-              ? 'Je doorgave staat vast. Nieuwe dagen kun je nog vrij aanklikken en toevoegen; bevestigde dagen (●) niet meer verwijderen.'
-              : 'Je keuzes worden automatisch bewaard.'}
+              ? 'Je doorgave staat vast. Je kan nog extra dagen vrij aanklikken en daarna toevoegen met de blauwe knop hieronder; bevestigde dagen (●) kun je niet meer verwijderen.'
+              : `Je keuzes worden automatisch bewaard. Je mag meer dagen aanklikken dan het minimum (${required}) — extra dagen zijn welkom.`}
           </div>
           {msg && <div className={`msg ${msg.kind === 'err' ? 'err' : 'good'}`}>{msg.text}</div>}
         </>

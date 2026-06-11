@@ -47,11 +47,18 @@ export default function ShopmanagerAvailability({ shopId }) {
       // 2) Ondernemers gekoppeld aan deze winkel + actief deze maand
       const { data: links } = await supabase
         .from('entrepreneur_shops')
-        .select('entrepreneur_id, start_date, end_date')
+        .select('entrepreneur_id, start_date, end_date, must_operate')
         .eq('shop_id', shopId)
-      const activeIds = [...new Set((links || [])
+      const activeLinks = (links || [])
         .filter((l) => l.start_date <= monthEnd && (!l.end_date || l.end_date >= monthStart))
-        .map((l) => l.entrepreneur_id))]
+      const activeIds = [...new Set(activeLinks.map((l) => l.entrepreneur_id))]
+      const mustOperateByEmp = new Map()
+      activeLinks.forEach((l) => {
+        // Als minstens één rij must_operate=true heeft, telt deze ondernemer als verplicht voor deze winkel
+        if (!mustOperateByEmp.has(l.entrepreneur_id) || l.must_operate) {
+          mustOperateByEmp.set(l.entrepreneur_id, !!l.must_operate)
+        }
+      })
 
       let ondRecs = []
       if (activeIds.length) {
@@ -84,6 +91,7 @@ export default function ShopmanagerAvailability({ shopId }) {
         const sub = subByEmp.get(e.id)
         return {
           id: e.id, first_name: e.first_name, last_name: e.last_name, company_name: e.company_name,
+          must_operate: !!mustOperateByEmp.get(e.id),
           submission_id: sub?.id || null,
           confirmed_at: sub?.confirmed_at || null,
           mandatory: sub ? (manSet.get(sub.id) || new Set()) : new Set(),
@@ -270,7 +278,8 @@ export default function ShopmanagerAvailability({ shopId }) {
                     <strong>{o.first_name}{o.last_name ? ' ' + o.last_name : ''}</strong>
                     {o.company_name && <span className="muted"> · {o.company_name}</span>}
                     {o.confirmed_at && <span className="tag bevestigd" style={{ marginLeft: 6 }}>bevestigd</span>}
-                    {!o.submission_id && <span className="tag niet" style={{ marginLeft: 6 }}>nog niet doorgegeven</span>}
+                    {!o.submission_id && o.must_operate && <span className="tag niet" style={{ marginLeft: 6 }}>nog niet doorgegeven</span>}
+                    {!o.must_operate && <span className="tag" style={{ marginLeft: 6, background: '#eee', color: '#666' }}>standaardcommissie</span>}
                     <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
                       Verplicht ({o.mandatory.size}): {fmtList(o.mandatory) || '—'}
                       {' · '}Extra ({o.extra.size}): {fmtList(o.extra) || '—'}
