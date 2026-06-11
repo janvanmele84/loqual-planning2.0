@@ -4,6 +4,7 @@ import Shell from './Shell.jsx'
 import MyDeadlineBanner from './MyDeadlineBanner.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import TeamCalendar from './TeamCalendar.jsx'
+import OndernemerExtraDays from './OndernemerExtraDays.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -298,13 +299,16 @@ export default function OndernemerCalendar({ employee, onLogout }) {
       <MyDeadlineBanner employee={employee} />
       <div className="tabs">
         <button className={'tab' + (view === 'mine' ? ' active' : '')} onClick={() => setView('mine')}>
-          Mijn beschikbaarheid
+          Verplichte dagen
+        </button>
+        <button className={'tab' + (view === 'extra' ? ' active' : '')} onClick={() => setView('extra')}>
+          Extra werkdagen
         </button>
         <button className={'tab' + (view === 'team' ? ' active' : '')} onClick={() => setView('team')}>
           Wie werkt wanneer
         </button>
       </div>
-      {view === 'team' ? <TeamCalendar employee={employee} /> : (
+      {view === 'team' ? <TeamCalendar employee={employee} /> : view === 'extra' ? <OndernemerExtraDays employee={employee} /> : (
       <>
       <div className="monthnav">
         <button className="icon-btn" onClick={() => canPrev && setMonth(addMonths(month, -1))} disabled={!canPrev}>

@@ -236,6 +236,25 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     }
   }
 
+  async function confirmOnBehalf() {
+    const { employeeId, name } = dialog
+    setDialog(null)
+    setBusy(true); setMsg(null)
+    try {
+      const { error } = await supabase.rpc('confirm_submission_on_behalf', {
+        p_employee_id: employeeId,
+        p_month: monthStart,
+      })
+      if (error) throw error
+      await load()
+      setMsg({ kind: 'good', text: `${name} is bevestigd namens hem.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Bevestigen mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function markHandled(employeeId, name, operate_days) {
     setDialog({ kind: 'handle', employeeId, name, operate_days: operate_days || 1 })
   }
@@ -805,6 +824,10 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
               <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
                 onClick={() => applyHandle('other', null, null)}>
                 Andere afhandeling (manager regelt zelf)
+              </button>
+              <button className="btn btn-block" style={{ marginBottom: 8, background: '#e8efe4', color: '#2f5a31' }} disabled={busy}
+                onClick={confirmOnBehalf}>
+                Akkoord — bevestig namens hem (telt als doorgegeven)
               </button>
               <button className="btn btn-block" disabled={busy} onClick={() => setDialog(null)}>
                 Annuleren

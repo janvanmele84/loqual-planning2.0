@@ -68,6 +68,9 @@ export default function MyDeadlineBanner({ employee }) {
               <div style={{ fontSize: 13, marginTop: 4 }}>
                 Deadline: <strong>{dateLabel(it.confirm_deadline)}</strong> (nog {it.days_until_confirm} {daysWord(it.days_until_confirm)}). Wie niets bevestigt wordt automatisch als afgekocht beschouwd.
               </div>
+              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>
+                💡 Tip: een uitbatingsdag mag je maximaal één maand verschuiven (vooruit of achteruit). Lukt dat niet, dan moet je afkopen.
+              </div>
             </div>
           </div>
         )
