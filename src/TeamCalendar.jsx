@@ -123,30 +123,46 @@ export default function TeamCalendar({ employee, allShops = false }) {
             {cells.map((c, i) => {
               if (!c) return <div key={'b' + i} />
               const has = c.people.length > 0
+              const anyMandatory = c.people.some((p) => p.assignment_kind === 'mandatory')
+              const allPaid = has && c.people.every((p) => p.assignment_kind !== 'mandatory')
+              let bg = 'var(--surface-2)'
+              let border = 'var(--line)'
+              if (anyMandatory) { bg = 'var(--avail-bg)'; border = 'var(--avail-border, var(--line))' }
+              else if (allPaid) { bg = 'var(--paid-bg)'; border = 'var(--paid-border, var(--line))' }
               return (
                 <div key={c.str} style={{
                   minHeight: 64, borderRadius: 8, padding: '4px 4px 6px',
-                  border: '1px solid var(--line)',
-                  background: has ? 'var(--surface)' : '#faf8f5',
+                  border: `1px solid ${border}`, background: bg,
                 }}>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 2 }}>{c.d}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {c.people.map((p, j) => (
-                      <span key={j} style={{
-                        fontSize: 11, lineHeight: 1.25, fontWeight: 600,
-                        color: p.role === 'ondernemer' ? 'var(--ink)' : '#2d4a7a',
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>
-                        {p.first_name}
-                      </span>
-                    ))}
+                    {c.people.map((p, j) => {
+                      const isMand = p.assignment_kind === 'mandatory'
+                      return (
+                        <span key={j} style={{
+                          fontSize: 11, lineHeight: 1.25, fontWeight: 600,
+                          color: isMand ? 'var(--ink)' : '#1f4974',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {p.first_name}
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
               )
             })}
           </div>
-          <div className="hint" style={{ marginBottom: 0, marginTop: 10 }}>
-            Donker = ondernemer, blauw = flexi of jobstudent.
+          <div className="legend" style={{ marginTop: 10 }}>
+            <span className="item">
+              <span className="sw" style={{ background: 'var(--avail-bg)' }} /> Ondernemer (verplichte dag)
+            </span>
+            <span className="item">
+              <span className="sw" style={{ background: 'var(--paid-bg)' }} /> Betaald (extra/flexi)
+            </span>
+            <span className="item">
+              <span className="sw" style={{ background: 'var(--surface-2)' }} /> Leeg/gesloten
+            </span>
           </div>
         </div>
       )}

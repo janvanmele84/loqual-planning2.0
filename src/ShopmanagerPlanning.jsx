@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import UnplacedBanner from './UnplacedBanner.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -488,6 +489,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         </div>
       ) : (
         <>
+        <UnplacedBanner shopId={shopId} monthStart={monthStart} />
           {pub?.status === 'confirmed' && <span className="pubbadge confirmed">Bevestigd — wacht op publicatie</span>}
           {pub?.status === 'published' && <span className="pubbadge published">Gepubliceerd</span>}
 
@@ -587,21 +589,9 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           {monthIsPast ? (
             <div className="hint">Deze maand is voorbij — alleen-lezen. Je ziet hier wie wanneer werkte; wijzigen kan niet meer.</div>
           ) : pub?.status === 'published' ? (
-            <>
-              <div className="hint">De planning voor deze maand is al gepubliceerd. Shuffelen is niet meer mogelijk; manuele aanpassingen kunnen wel — tik op een dag.</div>
-            </>
+            <div className="hint">De planning voor deze maand is gepubliceerd. Manuele aanpassingen kunnen nog — tik op een dag.</div>
           ) : (
-            <>
-              <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen.</div>
-              <button
-                className="btn btn-primary btn-block"
-                style={{ marginTop: 8, marginBottom: 12 }}
-                onClick={doShuffle}
-                disabled={busy}
-              >
-                {busy ? 'Bezig…' : 'Shuffle lege dagen'}
-              </button>
-            </>
+            <div className="hint">Tik op een lege dag om iemand in te plannen, of op een ingevulde dag om die toewijzing te verwijderen. Het systeem doet zelf een shuffle op de bevestigingsdeadline (15de van de tweede maand vooraf) en publiceert automatisch op de 1ste van de voorgaande maand.</div>
           )}
 
           {subStatus.length > 0 &&
@@ -724,18 +714,11 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
             )}
           </div>
 
-          <button
-            className="btn btn-block"
-            style={{ marginTop: 10 }}
-            onClick={() => setDialog({ kind: 'publish' })}
-            disabled={busy}
-          >
-            {pub?.status === 'published' ? 'Update publiceren' : 'Planning publiceren'}
-          </button>
-          <div className="hint" style={{ textAlign: 'center' }}>
-            Publiceren mag ook met lege dagen. Vul je ze later in, dan publiceer je gewoon opnieuw — de betrokkenen
-            krijgen dan een update.
-          </div>
+          {!monthIsPast && pub?.status !== 'published' && (
+            <div className="hint" style={{ marginTop: 10, textAlign: 'center', padding: 10, background: 'var(--surface-2)', borderRadius: 8 }}>
+              De planning wordt automatisch gepubliceerd op de 1ste van de voorgaande maand. Tot dan kun je nog vrij aanpassen.
+            </div>
+          )}
             </>
           )}
 
@@ -832,19 +815,37 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
               <p className="muted">Niemand gaf deze dag op als beschikbaar voor deze winkel.</p>
             ) : (
               <div>
-                {picker.candidates.map((c) => (
-                  <button key={c.employee_id + c.kind} style={pickerRow} onClick={() => assignCandidate(c)}>
-                    <span style={{ fontWeight: 600 }}>{c.first_name}</span>
-                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <span className="muted" style={{ fontSize: 13 }}>{c.label}</span>
-                      {c.over_max && (
-                        <span style={{ fontSize: 11.5, color: 'var(--danger)' }}>
-                          ⚠ max. {c.max_extra} bereikt
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
+                {picker.candidates.map((c) => {
+                  // Cross-shop quota status
+                  const hasQuota = c.quota_total != null && c.quota_total > 0
+                  const allDone = hasQuota && c.quota_open === 0
+                  // Bepaal werkelijk effectieve label rekening houdend met quota
+                  let effectiveLabel = c.label
+                  if (c.kind === 'mandatory' && allDone) {
+                    effectiveLabel = 'Extra dag (alle verplichte al ingepland)'
+                  } else if (c.kind === 'mandatory' && hasQuota && c.quota_open < c.quota_total) {
+                    effectiveLabel = `Verplichte dag (${c.quota_open} van ${c.quota_total} open)`
+                  }
+                  const shopsText = c.assigned_shops || ''
+                  return (
+                    <button key={c.employee_id + c.kind} style={pickerRow} onClick={() => assignCandidate(c)}>
+                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                        <span style={{ fontWeight: 600 }}>{c.first_name}</span>
+                        {shopsText && (
+                          <span style={{ fontSize: 11.5, color: 'var(--muted, #777)' }}>reeds ingepland: {shopsText}</span>
+                        )}
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                        <span className="muted" style={{ fontSize: 13, color: allDone ? '#1565c0' : undefined }}>{effectiveLabel}</span>
+                        {c.over_max && (
+                          <span style={{ fontSize: 11.5, color: 'var(--danger)' }}>
+                            ⚠ max. {c.max_extra} bereikt
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
