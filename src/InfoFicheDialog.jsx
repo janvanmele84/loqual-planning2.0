@@ -111,20 +111,38 @@ export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
               <div style={card}>
                 <div style={cardTitle}>Per winkel</div>
                 {data.per_shop.map((s) => {
-                  const credited = (s.regular_done || 0) + (s.makeup_in || 0)
-                  const buyoutDays = s.buyout?.days_count || 0
-                  const totalForQuota = credited + buyoutDays + (s.buyout?.reason === 'shifted' ? (s.buyout?.days_count || s.quota) : 0)
+                  const hasBuyout = !!s.buyout
+                  const cardBg = hasBuyout
+                    ? (s.buyout.reason === 'shifted' ? '#e7f0fb' : '#fff2dd')
+                    : 'transparent'
+                  const cardBorder = hasBuyout
+                    ? (s.buyout.reason === 'shifted' ? '#7da6d4' : '#d8b97a')
+                    : 'transparent'
                   return (
-                    <div key={s.shop_id} style={{ marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--line)' }}>
+                    <div key={s.shop_id} style={{
+                      marginBottom: 10, padding: hasBuyout ? '10px 12px' : '0 0 12px 0',
+                      borderRadius: hasBuyout ? 10 : 0,
+                      borderBottom: hasBuyout ? 'none' : '1px solid var(--line)',
+                      background: cardBg,
+                      border: hasBuyout ? `1px solid ${cardBorder}` : undefined,
+                    }}>
                       <div style={{ fontWeight: 600 }}>
                         {s.shop_name}
                         {!s.must_operate && <span style={tag('gray')}>standaardcommissie</span>}
+                        {hasBuyout && (
+                          <span style={tag(s.buyout.reason === 'shifted' ? 'blue' : 'amber')}>
+                            {s.buyout.reason === 'paid' && '€ afgekocht'}
+                            {s.buyout.reason === 'auto_unconfirmed' && '€ auto afgekocht'}
+                            {s.buyout.reason === 'shifted' && '↪ verschoven'}
+                            {s.buyout.reason === 'other' && 'andere afhandeling'}
+                          </span>
+                        )}
                       </div>
                       {s.must_operate && (
                         <div style={{ fontSize: 13, marginTop: 4 }}>
                           Quota: <strong>{s.quota}</strong> · gepresteerd: <strong>{s.regular_done}</strong>
                           {s.makeup_in > 0 && <> · inhaal: <strong>{s.makeup_in}</strong></>}
-                          {s.buyout && <> · afgekocht: <strong>{s.buyout.days_count}</strong></>}
+                          {hasBuyout && <> · afgekocht: <strong>{s.buyout.days_count || s.quota}</strong></>}
                           {s.extra_done > 0 && <> · extra: <strong>{s.extra_done}</strong></>}
                         </div>
                       )}
@@ -133,17 +151,25 @@ export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
                           Ingepland op: {s.regular_dates.map(fmt).join(', ')}
                         </div>
                       )}
-                      {s.buyout && (
-                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                          {s.buyout.reason === 'paid' && `Afgekocht (€${s.buyout.amount || 200} per dag)`}
-                          {s.buyout.reason === 'auto_unconfirmed' && 'Automatisch afgekocht (geen bevestiging)'}
-                          {s.buyout.reason === 'shifted' && `Verschoven naar ${monthLabel(s.buyout.shift_to_month)}`}
-                          {s.buyout.reason === 'other' && 'Andere afhandeling'}
+                      {hasBuyout && (
+                        <div style={{ fontSize: 12, marginTop: 6, color: s.buyout.reason === 'shifted' ? '#1f4974' : '#8a571f', fontWeight: 500 }}>
+                          {s.buyout.reason === 'paid' && (
+                            <>Afgekocht: {s.buyout.days_count || s.quota} van {s.quota} {(s.buyout.days_count || s.quota) === 1 ? 'dag' : 'dagen'} · €{(s.buyout.amount || 200) * (s.buyout.days_count || s.quota)}</>
+                          )}
+                          {s.buyout.reason === 'auto_unconfirmed' && (
+                            <>Automatisch afgekocht (geen bevestiging) — {s.buyout.days_count || s.quota} {(s.buyout.days_count || s.quota) === 1 ? 'dag' : 'dagen'}</>
+                          )}
+                          {s.buyout.reason === 'shifted' && (
+                            <>Verschoven naar {monthLabel(s.buyout.shift_to_month)}</>
+                          )}
+                          {s.buyout.reason === 'other' && (
+                            <>Andere afhandeling — door manager geregeld</>
+                          )}
                         </div>
                       )}
                       {/* Afwijking-detectie */}
                       {s.must_operate && (() => {
-                        const tot = (s.regular_done || 0) + (s.makeup_in || 0) + (s.buyout?.days_count || 0)
+                        const tot = (s.regular_done || 0) + (s.makeup_in || 0) + (s.buyout?.days_count || (s.buyout ? s.quota : 0))
                         if (tot < s.quota) return <div style={{ fontSize: 12, color: '#c33', marginTop: 4 }}>⚠ {s.quota - tot} dag(en) tekort in deze winkel</div>
                         if (tot > s.quota) return <div style={{ fontSize: 12, color: '#8a571f', marginTop: 4 }}>⚠ {tot - s.quota} dag(en) boven quota</div>
                         return null
@@ -189,8 +215,17 @@ const card = { background: 'var(--surface-2, #faf8f5)', borderRadius: 10, paddin
 const cardTitle = { fontWeight: 600, marginBottom: 8 }
 const closeBtn = { background: 'transparent', border: 0, fontSize: 18, cursor: 'pointer', color: 'var(--muted)' }
 
-const tag = (color) => ({
-  display: 'inline-block', marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 8,
-  background: color === 'green' ? '#e8efe4' : color === 'red' ? '#fde2e2' : '#eee',
-  color: color === 'green' ? '#2f5a31' : color === 'red' ? '#8a1f1f' : '#666',
-})
+const tag = (color) => {
+  const colors = {
+    green: { bg: '#e8efe4', fg: '#2f5a31' },
+    red:   { bg: '#fde2e2', fg: '#8a1f1f' },
+    amber: { bg: '#fde2c8', fg: '#8a571f' },
+    blue:  { bg: '#d8e6f5', fg: '#1f4974' },
+    gray:  { bg: '#eee',    fg: '#666' },
+  }
+  const c = colors[color] || colors.gray
+  return {
+    display: 'inline-block', marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 8,
+    background: c.bg, color: c.fg,
+  }
+}

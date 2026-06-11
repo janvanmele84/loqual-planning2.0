@@ -89,6 +89,17 @@ export default function ShopmanagerAvailability({ shopId }) {
         m.get(d.submission_id).add(d.day)
       })
 
+      // Buyouts voor deze winkel/maand
+      const { data: buyoutRows } = activeIds.length
+        ? await supabase
+            .from('buyouts')
+            .select('entrepreneur_id, reason, days_count, amount, shift_to_month')
+            .in('entrepreneur_id', activeIds)
+            .eq('shop_id', shopId)
+            .eq('month_start', monthStart)
+        : { data: [] }
+      const buyoutByEmp = new Map((buyoutRows || []).map((b) => [b.entrepreneur_id, b]))
+
       setOndernemers(ondRecs.map((e) => {
         const sub = subByEmp.get(e.id)
         return {
@@ -99,6 +110,7 @@ export default function ShopmanagerAvailability({ shopId }) {
           confirmed_at: sub?.confirmed_at || null,
           mandatory: sub ? (manSet.get(sub.id) || new Set()) : new Set(),
           extra: sub ? (extSet.get(sub.id) || new Set()) : new Set(),
+          buyout: buyoutByEmp.get(e.id) || null,
         }
       }))
 
@@ -230,14 +242,51 @@ export default function ShopmanagerAvailability({ shopId }) {
       const label = daysCount && daysCount < person.operate_days
         ? `${daysCount} van ${person.operate_days} dag(en)`
         : `${person.operate_days} dag(en)`
-      setMsg({ kind: 'good', text: `${person.first_name} afgekocht voor ${label} in deze winkel.` })
-      // Sluit ook de edit-dialoog want context wijzigt
-      setEditing(null)
+      setMsg({ kind: 'good', text: `✓ ${person.first_name} afgekocht voor ${label} in deze winkel.` })
+      await refreshOndernemer(person.id)
     } catch (e) {
       setMsg({ kind: 'err', text: e?.message || 'Afkoop mislukt.' })
     } finally {
       setBusy(false)
     }
+  }
+
+  async function undoBuyout(person) {
+    setBusy(true); setMsg(null)
+    try {
+      const { error } = await supabase
+        .from('buyouts')
+        .delete()
+        .eq('entrepreneur_id', person.id)
+        .eq('shop_id', shopId)
+        .eq('month_start', monthStart)
+      if (error) throw error
+      setMsg({ kind: 'good', text: `Afkoop van ${person.first_name} ongedaan gemaakt.` })
+      await refreshOndernemer(person.id)
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Ongedaan maken mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Vernieuwt enkel deze ondernemer-rij na een afkoop-actie zodat de edit-dialog open kan blijven
+  async function refreshOndernemer(empId) {
+    const { data: b } = await supabase
+      .from('buyouts')
+      .select('entrepreneur_id, reason, days_count, amount, shift_to_month')
+      .eq('entrepreneur_id', empId)
+      .eq('shop_id', shopId)
+      .eq('month_start', monthStart)
+      .maybeSingle()
+    setOndernemers((prev) => prev.map((o) =>
+      o.id === empId ? { ...o, buyout: b || null } : o,
+    ))
+    setEditing((cur) => (
+      cur && cur.person && cur.person.id === empId
+        ? { ...cur, person: { ...cur.person, buyout: b || null } }
+        : cur
+    ))
   }
 
   // Build day cells for the month
@@ -311,6 +360,13 @@ export default function ShopmanagerAvailability({ shopId }) {
                     {o.confirmed_at && <span className="tag bevestigd" style={{ marginLeft: 6 }}>bevestigd</span>}
                     {!o.submission_id && o.must_operate && <span className="tag niet" style={{ marginLeft: 6 }}>nog niet doorgegeven</span>}
                     {!o.must_operate && <span className="tag" style={{ marginLeft: 6, background: '#eee', color: '#666' }}>standaardcommissie</span>}
+                    {o.buyout && (
+                      <span className="tag" style={{ marginLeft: 6, background: '#fff2dd', color: '#8a571f' }}>
+                        {o.buyout.reason === 'shifted'
+                          ? `verschoven`
+                          : `afgekocht ${(o.buyout.days_count || o.operate_days)}/${o.operate_days} ${(o.buyout.days_count || o.operate_days) === 1 ? 'dag' : 'dagen'}`}
+                      </span>
+                    )}
                     <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
                       Verplicht ({o.mandatory.size}): {fmtList(o.mandatory) || '—'}
                       {' · '}Extra ({o.extra.size}): {fmtList(o.extra) || '—'}
@@ -398,18 +454,61 @@ export default function ShopmanagerAvailability({ shopId }) {
                 {!monthIsPast && editing.person.must_operate && (
                   <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Afkoop voor deze winkel</div>
-                    <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                      Wil je een (of meerdere) verplichte dag(en) van deze ondernemer afkopen voor jouw winkel in {MONTHS[month.getMonth()]}?
-                      De afkoop telt mee in de boekhouding en voor je bonus.
-                    </div>
-                    <button
-                      className="btn"
-                      disabled={busy}
-                      onClick={() => setBuyoutDialog({ person: editing.person })}
-                      style={{ fontSize: 13 }}
-                    >
-                      Dag(en) afkopen…
-                    </button>
+                    {editing.person.buyout ? (
+                      <div style={{
+                        background: '#fff2dd', border: '1px solid #d8b97a', borderRadius: 8,
+                        padding: 10, marginBottom: 8,
+                      }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#8a571f' }}>
+                          ✓ Reeds afgekocht voor {MONTHS[month.getMonth()]}
+                        </div>
+                        <div style={{ fontSize: 12, marginTop: 4, color: '#8a571f' }}>
+                          {editing.person.buyout.reason === 'shifted' ? (
+                            <>Verschoven naar een andere maand</>
+                          ) : editing.person.buyout.reason === 'auto_unconfirmed' ? (
+                            <>Automatisch afgekocht (geen bevestiging){' '}
+                              ({editing.person.buyout.days_count || editing.person.operate_days} van {editing.person.operate_days} {(editing.person.buyout.days_count || editing.person.operate_days) === 1 ? 'dag' : 'dagen'})</>
+                          ) : (
+                            <>{editing.person.buyout.days_count || editing.person.operate_days} van {editing.person.operate_days} {(editing.person.buyout.days_count || editing.person.operate_days) === 1 ? 'dag' : 'dagen'} afgekocht — €{200 * (editing.person.buyout.days_count || editing.person.operate_days)}</>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          {editing.person.buyout.reason !== 'shifted' && (
+                            <button
+                              className="btn"
+                              style={{ fontSize: 12, padding: '4px 10px' }}
+                              disabled={busy}
+                              onClick={() => setBuyoutDialog({ person: editing.person })}
+                            >
+                              Afkoop wijzigen
+                            </button>
+                          )}
+                          <button
+                            className="btn"
+                            style={{ fontSize: 12, padding: '4px 10px', color: 'var(--danger)' }}
+                            disabled={busy}
+                            onClick={() => undoBuyout(editing.person)}
+                          >
+                            Afkoop ongedaan maken
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                          Wil je een (of meerdere) verplichte dag(en) van deze ondernemer afkopen voor jouw winkel in {MONTHS[month.getMonth()]}?
+                          De afkoop telt mee in de boekhouding en voor je bonus.
+                        </div>
+                        <button
+                          className="btn"
+                          disabled={busy}
+                          onClick={() => setBuyoutDialog({ person: editing.person })}
+                          style={{ fontSize: 13 }}
+                        >
+                          Dag(en) afkopen…
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </>
