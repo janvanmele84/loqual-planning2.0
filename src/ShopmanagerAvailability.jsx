@@ -27,6 +27,7 @@ export default function ShopmanagerAvailability({ shopId }) {
   const [ondernemers, setOndernemers] = useState([])
   const [werkers, setWerkers] = useState([])
   const [editing, setEditing] = useState(null) // null | {kind:'ond'|'werk', person}
+  const [buyoutDialog, setBuyoutDialog] = useState(null) // null | { person }
   const [msg, setMsg] = useState(null)
   const [search, setSearch] = useState('')
   const ensureRef = useRef({}) // person.id -> Promise<submission_id>
@@ -47,17 +48,18 @@ export default function ShopmanagerAvailability({ shopId }) {
       // 2) Ondernemers gekoppeld aan deze winkel + actief deze maand
       const { data: links } = await supabase
         .from('entrepreneur_shops')
-        .select('entrepreneur_id, start_date, end_date, must_operate')
+        .select('entrepreneur_id, start_date, end_date, must_operate, operate_days')
         .eq('shop_id', shopId)
       const activeLinks = (links || [])
         .filter((l) => l.start_date <= monthEnd && (!l.end_date || l.end_date >= monthStart))
       const activeIds = [...new Set(activeLinks.map((l) => l.entrepreneur_id))]
       const mustOperateByEmp = new Map()
+      const operateDaysByEmp = new Map()
       activeLinks.forEach((l) => {
-        // Als minstens één rij must_operate=true heeft, telt deze ondernemer als verplicht voor deze winkel
         if (!mustOperateByEmp.has(l.entrepreneur_id) || l.must_operate) {
           mustOperateByEmp.set(l.entrepreneur_id, !!l.must_operate)
         }
+        operateDaysByEmp.set(l.entrepreneur_id, l.operate_days || 1)
       })
 
       let ondRecs = []
@@ -92,6 +94,7 @@ export default function ShopmanagerAvailability({ shopId }) {
         return {
           id: e.id, first_name: e.first_name, last_name: e.last_name, company_name: e.company_name,
           must_operate: !!mustOperateByEmp.get(e.id),
+          operate_days: operateDaysByEmp.get(e.id) || 1,
           submission_id: sub?.id || null,
           confirmed_at: sub?.confirmed_at || null,
           mandatory: sub ? (manSet.get(sub.id) || new Set()) : new Set(),
@@ -206,6 +209,34 @@ export default function ShopmanagerAvailability({ shopId }) {
     } catch (e) {
       setMsg({ kind: 'err', text: 'Opslaan mislukt — opnieuw geladen.' })
       await load()
+    }
+  }
+
+  async function applyBuyout(daysCount) {
+    if (!buyoutDialog) return
+    const { person } = buyoutDialog
+    setBuyoutDialog(null)
+    setBusy(true); setMsg(null)
+    try {
+      const { error } = await supabase.rpc('mark_entrepreneur_handled', {
+        p_employee_id: person.id,
+        p_shop_id: shopId,
+        p_month: monthStart,
+        p_reason: 'paid',
+        p_shift_to_month: null,
+        p_days_count: daysCount,
+      })
+      if (error) throw error
+      const label = daysCount && daysCount < person.operate_days
+        ? `${daysCount} van ${person.operate_days} dag(en)`
+        : `${person.operate_days} dag(en)`
+      setMsg({ kind: 'good', text: `${person.first_name} afgekocht voor ${label} in deze winkel.` })
+      // Sluit ook de edit-dialoog want context wijzigt
+      setEditing(null)
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Afkoop mislukt.' })
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -364,6 +395,23 @@ export default function ShopmanagerAvailability({ shopId }) {
                   color="paid" busy={busy} disabled={monthIsPast}
                   onTap={(d) => toggleDay('ond', editing.person, 'extra', d, editing.person.extra.has(d))}
                 />
+                {!monthIsPast && editing.person.must_operate && (
+                  <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Afkoop voor deze winkel</div>
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                      Wil je een (of meerdere) verplichte dag(en) van deze ondernemer afkopen voor jouw winkel in {MONTHS[month.getMonth()]}?
+                      De afkoop telt mee in de boekhouding en voor je bonus.
+                    </div>
+                    <button
+                      className="btn"
+                      disabled={busy}
+                      onClick={() => setBuyoutDialog({ person: editing.person })}
+                      style={{ fontSize: 13 }}
+                    >
+                      Dag(en) afkopen…
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -383,6 +431,36 @@ export default function ShopmanagerAvailability({ shopId }) {
           </div>
         </div>
       )}
+
+      {buyoutDialog && (() => {
+        const od = buyoutDialog.person.operate_days || 1
+        const partialOptions = []
+        for (let i = 1; i < od; i++) partialOptions.push(i)
+        return (
+          <div style={ovl} onClick={() => setBuyoutDialog(null)}>
+            <div style={dlg} onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ marginBottom: 6 }}>Afkopen: {buyoutDialog.person.first_name}</h3>
+              <div className="muted" style={{ marginBottom: 14, fontSize: 14 }}>
+                Voor {MONTHS[month.getMonth()]} {month.getFullYear()} in deze winkel.
+                {od > 1 && ` Deze ondernemer heeft ${od} uitbatingsdagen.`}
+              </div>
+              <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
+                onClick={() => applyBuyout(null)}>
+                Afgekocht — alle {od > 1 ? `${od} dagen` : '1 dag'} (€{200 * od})
+              </button>
+              {partialOptions.map((n) => (
+                <button key={n} className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
+                  onClick={() => applyBuyout(n)}>
+                  Gedeeltelijk afgekocht — {n} van {od} {n === 1 ? 'dag' : 'dagen'} (€{200 * n}, rest moet nog uitbaten)
+                </button>
+              ))}
+              <button className="btn btn-block" disabled={busy} onClick={() => setBuyoutDialog(null)}>
+                Annuleren
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }

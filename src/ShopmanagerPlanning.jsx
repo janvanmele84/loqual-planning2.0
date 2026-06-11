@@ -872,31 +872,39 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
             ) : (
               <div>
                 {picker.candidates.map((c) => {
-                  // Cross-shop quota status
                   const hasQuota = c.quota_total != null && c.quota_total > 0
                   const allDone = hasQuota && c.quota_open === 0
                   const isFallback = !!c.is_fallback
-                  // Bepaal werkelijk effectieve label rekening houdend met quota
+                  const isTakeover = !!c.is_takeover
                   let effectiveLabel = c.label
                   if (isFallback) {
                     effectiveLabel = 'Niet doorgegeven — manueel'
+                  } else if (isTakeover) {
+                    effectiveLabel = `Overname — geen plaats in ${c.home_shops || 'eigen winkel'}`
                   } else if (c.kind === 'mandatory' && allDone) {
                     effectiveLabel = 'Extra dag (alle verplichte al ingepland)'
                   } else if (c.kind === 'mandatory' && hasQuota && c.quota_open < c.quota_total) {
                     effectiveLabel = `Verplichte dag (${c.quota_open} van ${c.quota_total} open)`
                   }
                   const shopsText = c.assigned_shops || ''
-                  const rowStyle = isFallback ? { ...pickerRow, opacity: 0.65, fontStyle: 'italic' } : pickerRow
+                  const rowStyle = isFallback
+                    ? { ...pickerRow, opacity: 0.65, fontStyle: 'italic' }
+                    : isTakeover
+                      ? { ...pickerRow, background: '#fff7e8', borderColor: '#d88' }
+                      : pickerRow
                   return (
                     <button key={c.employee_id + c.kind} style={rowStyle} onClick={() => assignCandidate(c)}>
                       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                        <span style={{ fontWeight: 600 }}>{c.first_name}</span>
+                        <span style={{ fontWeight: 600 }}>
+                          {c.first_name}
+                          {isTakeover && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#fde2c8', color: '#8a571f', verticalAlign: 'middle' }}>overname</span>}
+                        </span>
                         {shopsText && (
                           <span style={{ fontSize: 11.5, color: 'var(--muted, #777)' }}>reeds ingepland: {shopsText}</span>
                         )}
                       </span>
                       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <span className="muted" style={{ fontSize: 13, color: allDone ? '#1565c0' : isFallback ? '#8a571f' : undefined }}>{effectiveLabel}</span>
+                        <span className="muted" style={{ fontSize: 13, color: allDone ? '#1565c0' : isFallback ? '#8a571f' : isTakeover ? '#8a571f' : undefined }}>{effectiveLabel}</span>
                         {c.over_max && (
                           <span style={{ fontSize: 11.5, color: 'var(--danger)' }}>
                             ⚠ max. {c.max_extra} bereikt

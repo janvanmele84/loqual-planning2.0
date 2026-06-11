@@ -14,47 +14,67 @@ function monthLabel(iso) {
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }
 
+function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01` }
+
 export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  // Maand-navigatie binnen de dialoog (default = doorgegeven monthStart)
+  const initial = monthStart
+    ? new Date(monthStart)
+    : new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  const [currentMonth, setCurrentMonth] = useState(initial)
+  // Bereik: 2 maanden geleden tot 3 maanden vooruit (5 maanden + nu = 6)
+  const today = new Date()
+  const minMonth = new Date(today.getFullYear(), today.getMonth() - 2, 1)
+  const maxMonth = new Date(today.getFullYear(), today.getMonth() + 3, 1)
+  const canPrev = currentMonth > minMonth
+  const canNext = currentMonth < maxMonth
 
   const load = useCallback(async () => {
     setError(null)
+    setData(null)
     try {
       const { data: result, error: err } = await supabase.rpc('entrepreneur_info_sheet', {
-        p_employee_id: employeeId, p_month: monthStart,
+        p_employee_id: employeeId, p_month: ymd(currentMonth),
       })
       if (err) throw err
       setData(result)
     } catch (e) {
       setError(e?.message || String(e))
     }
-  }, [employeeId, monthStart])
+  }, [employeeId, currentMonth])
 
   useEffect(() => { load() }, [load])
+
+  function shiftMonth(diff) {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + diff, 1))
+  }
 
   if (!employeeId) return null
 
   return (
     <div style={overlay} onClick={onClose}>
       <div style={dialog} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>
+            {data?.employee?.first_name || ''} {data?.employee?.last_name || ''}
+          </h3>
+          <button onClick={onClose} style={closeBtn}>✕</button>
+        </div>
+        {data?.employee?.company_name && (
+          <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>{data.employee.company_name}</div>
+        )}
+        <div className="monthnav" style={{ marginBottom: 14 }}>
+          <button className="icon-btn" onClick={() => shiftMonth(-1)} disabled={!canPrev}>‹</button>
+          <span className="label">{monthLabel(ymd(currentMonth))}</span>
+          <button className="icon-btn" onClick={() => shiftMonth(1)} disabled={!canNext}>›</button>
+        </div>
+
         {!data ? (
           error ? <p className="muted">Fout: {error}</p> : <p className="muted">Laden…</p>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-              <h3 style={{ margin: 0 }}>
-                {data.employee?.first_name} {data.employee?.last_name || ''}
-              </h3>
-              <button onClick={onClose} style={closeBtn}>✕</button>
-            </div>
-            {data.employee?.company_name && (
-              <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>{data.employee.company_name}</div>
-            )}
-            <div className="muted" style={{ marginBottom: 16, fontSize: 13 }}>
-              Infofiche voor <strong>{monthLabel(data.month)}</strong>
-            </div>
-
             {/* Submission status */}
             <div style={card}>
               <div style={cardTitle}>Beschikbaarheden doorgegeven</div>
