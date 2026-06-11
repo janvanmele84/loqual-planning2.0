@@ -5,6 +5,7 @@ import MyDeadlineBanner from './MyDeadlineBanner.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import TeamCalendar from './TeamCalendar.jsx'
 import OndernemerExtraDays from './OndernemerExtraDays.jsx'
+import MyMonthOverview from './MyMonthOverview.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -33,7 +34,8 @@ export default function OndernemerCalendar({ employee, onLogout }) {
   const thisMonth = firstOfMonth(today)
 
   const [month, setMonth] = useState(thisMonth)
-  const [view, setView] = useState('mine') // 'mine' | 'team'
+  const [view, setView] = useState('mine') // 'mine' | 'team' | 'extra'
+  const [showMonthOverview, setShowMonthOverview] = useState(false)
   const [shops, setShops] = useState([])
   const [openSet, setOpenSet] = useState(new Set())
   const [days, setDays] = useState(new Set()) // alle geselecteerde dagen
@@ -297,6 +299,11 @@ export default function OndernemerCalendar({ employee, onLogout }) {
   return (
     <Shell employee={employee} onLogout={onLogout}>
       <MyDeadlineBanner employee={employee} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <button className="btn" onClick={() => setShowMonthOverview(true)}>
+          📅 Mijn maand
+        </button>
+      </div>
       <div className="tabs">
         <button className={'tab' + (view === 'mine' ? ' active' : '')} onClick={() => setView('mine')}>
           Verplichte dagen
@@ -471,6 +478,9 @@ export default function OndernemerCalendar({ employee, onLogout }) {
         onCancel={() => setDialog(null)}
       />
       </>
+      )}
+      {showMonthOverview && (
+        <MyMonthOverview employee={employee} onClose={() => setShowMonthOverview(false)} />
       )}
     </Shell>
   )

@@ -4,6 +4,7 @@ import Shell from './Shell.jsx'
 import MyDeadlineBanner from './MyDeadlineBanner.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import TeamCalendar from './TeamCalendar.jsx'
+import MyMonthOverview from './MyMonthOverview.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -33,6 +34,7 @@ export default function WorkerCalendar({ employee, onLogout }) {
 
   const [month, setMonth] = useState(thisMonth)
   const [view, setView] = useState('mine') // 'mine' | 'team'
+  const [showMonthOverview, setShowMonthOverview] = useState(false)
   const [shops, setShops] = useState([])
   const [prefShops, setPrefShops] = useState([])
   const [lockedShops, setLockedShops] = useState(new Set())
@@ -336,6 +338,11 @@ export default function WorkerCalendar({ employee, onLogout }) {
   return (
     <Shell employee={employee} onLogout={onLogout}>
       <MyDeadlineBanner employee={employee} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <button className="btn" onClick={() => setShowMonthOverview(true)}>
+          📅 Mijn maand
+        </button>
+      </div>
       <div className="tabs">
         <button className={'tab' + (view === 'mine' ? ' active' : '')} onClick={() => setView('mine')}>
           Mijn beschikbaarheid
@@ -517,6 +524,9 @@ export default function WorkerCalendar({ employee, onLogout }) {
         onCancel={() => setDialog(null)}
       />
       </>
+      )}
+      {showMonthOverview && (
+        <MyMonthOverview employee={employee} onClose={() => setShowMonthOverview(false)} />
       )}
     </Shell>
   )

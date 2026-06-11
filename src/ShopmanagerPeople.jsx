@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import InfoFicheDialog from './InfoFicheDialog.jsx'
 
 function ymd(d) {
   const y = d.getFullYear()
@@ -24,6 +25,7 @@ export default function ShopmanagerPeople({ shopId }) {
   const [msg, setMsg] = useState(null)
   const [editor, setEditor] = useState(null)
   const [dialog, setDialog] = useState(null)
+  const [infoFiche, setInfoFiche] = useState(null)
   const [search, setSearch] = useState('')
 
   const load = useCallback(async () => {
@@ -276,6 +278,7 @@ export default function ShopmanagerPeople({ shopId }) {
                 </span>
               </span>
               <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => setInfoFiche(o.employeeId)}>Infofiche</button>
                 <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => editOndernemer(o)}>Bewerken</button>
                 <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => setDialog({ linkId: o.linkId, name: `${o.first_name} ${o.last_name}` })}>Verwijderen</button>
               </span>
@@ -447,6 +450,14 @@ export default function ShopmanagerPeople({ shopId }) {
         onConfirm={doRemove}
         onCancel={() => setDialog(null)}
       />
+
+      {infoFiche && (
+        <InfoFicheDialog
+          employeeId={infoFiche}
+          monthStart={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`}
+          onClose={() => setInfoFiche(null)}
+        />
+      )}
     </>
   )
 }

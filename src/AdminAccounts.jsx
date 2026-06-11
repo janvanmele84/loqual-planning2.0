@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import Toast from './Toast.jsx'
+import InfoFicheDialog from './InfoFicheDialog.jsx'
 
 const ROLES = ['admin', 'shopmanager', 'boekhouding', 'ondernemer', 'flexi', 'jobstudent']
 const ROLE_LABEL = {
@@ -21,6 +22,7 @@ export default function AdminAccounts({ employee }) {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [dialog, setDialog] = useState(null) // null | {kind:'new'} | {kind:'edit', id} | {kind:'del', emp} | {kind:'reset', emp}
+  const [infoFiche, setInfoFiche] = useState(null)
   const [form, setForm] = useState({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true, requires_operating_days: true })
 
   const load = useCallback(async () => {
@@ -302,6 +304,11 @@ export default function AdminAccounts({ employee }) {
                   <button className="btn" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => openEdit(p)} disabled={busy}>
                     Bewerken
                   </button>
+                  {p.role === 'ondernemer' && (
+                    <button className="btn" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => setInfoFiche(p.id)} disabled={busy}>
+                      Infofiche
+                    </button>
+                  )}
                   {p.auth_user_id && !isSelf && (
                     <button
                       className="btn"
@@ -421,6 +428,14 @@ export default function AdminAccounts({ employee }) {
         onConfirm={doResetPassword}
         onCancel={() => setDialog(null)}
       />
+
+      {infoFiche && (
+        <InfoFicheDialog
+          employeeId={infoFiche}
+          monthStart={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`}
+          onClose={() => setInfoFiche(null)}
+        />
+      )}
     </>
   )
 }

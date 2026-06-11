@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import UnplacedBanner from './UnplacedBanner.jsx'
+import InfoFicheDialog from './InfoFicheDialog.jsx'
 
 const WEEK = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo']
 const MONTHS = [
@@ -49,6 +50,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
   const [msg, setMsg] = useState(null)
   const [dialog, setDialog] = useState(null) // null | {kind:'remove',...} | {kind:'publish'}
   const [picker, setPicker] = useState(null) // null | {date, loading, candidates}
+  const [infoFiche, setInfoFiche] = useState(null) // null | employeeId
   const [redis, setRedis] = useState(null) // {incoming, outgoing}
   const [shortOpen, setShortOpen] = useState(false)
   const [shortList, setShortList] = useState(null) // null | array
@@ -632,7 +634,14 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                       <div style={{ marginTop: 6 }}>
                         {pending.map((p) => (
                           <div className="row-item" key={p.id}>
-                            <span>{p.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => setInfoFiche(p.id)}
+                              style={{ background: 'none', border: 0, color: 'inherit', textDecoration: 'underline', cursor: 'pointer', padding: 0, font: 'inherit', textAlign: 'left' }}
+                              title="Toon infofiche"
+                            >
+                              {p.name}
+                            </button>
                             <button
                               className="btn"
                               style={{ padding: '4px 10px', fontSize: 12 }}
@@ -650,7 +659,19 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                   <div>
                     <span className="tag bevestigd">Bevestigd ({confirmed.length})</span>
                     <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>
-                      {confirmed.length ? confirmed.map((c) => c.name).join(', ') : '—'}
+                      {confirmed.length === 0 ? '—' : confirmed.map((c, i) => (
+                        <span key={c.id}>
+                          <button
+                            type="button"
+                            onClick={() => setInfoFiche(c.id)}
+                            style={{ background: 'none', border: 0, color: 'inherit', textDecoration: 'underline', cursor: 'pointer', padding: 0, font: 'inherit' }}
+                            title="Toon infofiche"
+                          >
+                            {c.name}
+                          </button>
+                          {i < confirmed.length - 1 && ', '}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -948,6 +969,14 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
             )}
           </div>
         </div>
+      )}
+
+      {infoFiche && (
+        <InfoFicheDialog
+          employeeId={infoFiche}
+          monthStart={monthStart}
+          onClose={() => setInfoFiche(null)}
+        />
       )}
     </>
   )
