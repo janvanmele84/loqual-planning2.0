@@ -174,6 +174,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       const entList = Object.values(byEnt)
       const entIds = entList.map((e) => e.id)
       const confirmedSet = new Set()
+      const buyoutByEmp = new Map()
       if (entIds.length) {
         const { data: subs } = await supabase
           .from('availability_submissions')
@@ -183,11 +184,28 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         ;(subs || []).forEach((s) => {
           if (s.confirmed_at) confirmedSet.add(s.employee_id)
         })
+        const { data: bs } = await supabase
+          .from('buyouts')
+          .select('entrepreneur_id, reason, days_count, amount, shift_to_month')
+          .in('entrepreneur_id', entIds)
+          .eq('shop_id', shopId)
+          .eq('month_start', monthStart)
+        ;(bs || []).forEach((b) => buyoutByEmp.set(b.entrepreneur_id, b))
       }
       const statusList = entList
-        .map((e) => ({ id: e.id, name: e.name, operate_days: e.operate_days, status: confirmedSet.has(e.id) ? 'bevestigd' : 'niet' }))
+        .map((e) => {
+          const b = buyoutByEmp.get(e.id) || null
+          const status = b
+            ? 'afgehandeld'
+            : confirmedSet.has(e.id)
+              ? 'bevestigd'
+              : 'niet'
+          return { id: e.id, name: e.name, operate_days: e.operate_days, status, buyout: b }
+        })
         .sort((a, b) => {
-          if (a.status !== b.status) return a.status === 'niet' ? -1 : 1
+          // Volgorde: niet → afgehandeld → bevestigd
+          const order = { niet: 0, afgehandeld: 1, bevestigd: 2 }
+          if (a.status !== b.status) return order[a.status] - order[b.status]
           return a.name.localeCompare(b.name)
         })
       setSubStatus(statusList)
@@ -259,6 +277,26 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
 
   function markHandled(employeeId, name, operate_days) {
     setDialog({ kind: 'handle', employeeId, name, operate_days: operate_days || 1 })
+  }
+
+  async function undoHandled(employeeId, name) {
+    if (busy) return
+    setBusy(true); setMsg(null)
+    try {
+      const { error } = await supabase
+        .from('buyouts')
+        .delete()
+        .eq('entrepreneur_id', employeeId)
+        .eq('shop_id', shopId)
+        .eq('month_start', monthStart)
+      if (error) throw error
+      await load()
+      setMsg({ kind: 'good', text: `Afhandeling van ${name} ongedaan gemaakt.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Ongedaan maken mislukt.' })
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function doShuffle() {    if (!shopId) return
@@ -620,6 +658,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           {subStatus.length > 0 &&
             (() => {
               const confirmed = subStatus.filter((s) => s.status === 'bevestigd')
+              const handled = subStatus.filter((s) => s.status === 'afgehandeld')
               const pending = subStatus.filter((s) => s.status === 'niet')
               return (
                 <div className="card">
@@ -629,7 +668,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                   <div style={{ marginBottom: 10 }}>
                     <span className="tag niet">Nog niet doorgegeven ({pending.length})</span>
                     {pending.length === 0 ? (
-                      <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>Iedereen heeft doorgegeven ✓</div>
+                      <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>Iedereen is doorgegeven of afgehandeld ✓</div>
                     ) : (
                       <div style={{ marginTop: 6 }}>
                         {pending.map((p) => (
@@ -649,13 +688,57 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                               onClick={() => markHandled(p.id, p.name, p.operate_days)}
                               title="Markeer als afgehandeld — bv. dag verschoven naar volgende maand of zelf ingevuld"
                             >
-                              Afgehandeld
+                              Afhandelen
                             </button>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
+                  {handled.length > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <span className="tag" style={{ background: '#fff2dd', color: '#8a571f' }}>
+                        Afgehandeld ({handled.length})
+                      </span>
+                      <div style={{ marginTop: 6 }}>
+                        {handled.map((p) => {
+                          const b = p.buyout
+                          const days = b?.days_count || p.operate_days
+                          const reasonText =
+                            b?.reason === 'paid' ? `${days}/${p.operate_days} ${days === 1 ? 'dag' : 'dagen'} afgekocht (€${200 * days})` :
+                            b?.reason === 'auto_unconfirmed' ? `automatisch afgekocht (€${200 * days})` :
+                            b?.reason === 'shifted' ? `verschoven naar ${monthName(b.shift_to_month)}` :
+                            'andere afhandeling'
+                          return (
+                            <div className="row-item" key={p.id}>
+                              <span style={{ minWidth: 0 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setInfoFiche(p.id)}
+                                  style={{ background: 'none', border: 0, color: 'inherit', textDecoration: 'underline', cursor: 'pointer', padding: 0, font: 'inherit', textAlign: 'left' }}
+                                  title="Toon infofiche"
+                                >
+                                  {p.name}
+                                </button>
+                                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                                  {reasonText}
+                                </div>
+                              </span>
+                              <button
+                                className="btn"
+                                style={{ padding: '4px 10px', fontSize: 12, color: 'var(--danger)' }}
+                                disabled={busy}
+                                onClick={() => undoHandled(p.id, p.name)}
+                                title="Verwijder de afkoop / verschuiving voor deze maand in deze winkel"
+                              >
+                                Ongedaan
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <span className="tag bevestigd">Bevestigd ({confirmed.length})</span>
                     <div className="muted" style={{ marginTop: 6, fontSize: 14 }}>
