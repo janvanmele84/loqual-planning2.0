@@ -21,13 +21,13 @@ export default function AdminAccounts({ employee }) {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [dialog, setDialog] = useState(null) // null | {kind:'new'} | {kind:'edit', id} | {kind:'del', emp} | {kind:'reset', emp}
-  const [form, setForm] = useState({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true })
+  const [form, setForm] = useState({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true, requires_operating_days: true })
 
   const load = useCallback(async () => {
     setLoading(true)
     const { data } = await supabase
       .from('employees')
-      .select('id, auth_user_id, role, first_name, last_name, email, company_name, active')
+      .select('id, auth_user_id, role, first_name, last_name, email, company_name, active, requires_operating_days')
       .order('role')
       .order('first_name')
     setPeople(data || [])
@@ -49,7 +49,7 @@ export default function AdminAccounts({ employee }) {
   }, [byRole, search])
 
   function openNew() {
-    setForm({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true })
+    setForm({ role: 'flexi', first_name: '', last_name: '', email: '', company_name: '', active: true, requires_operating_days: true })
     setDialog({ kind: 'new' })
     setMsg(null)
   }
@@ -61,6 +61,7 @@ export default function AdminAccounts({ employee }) {
       email: p.email || '',
       company_name: p.company_name || '',
       active: p.active,
+      requires_operating_days: p.requires_operating_days !== false,
     })
     setDialog({ kind: 'edit', id: p.id })
     setMsg(null)
@@ -78,6 +79,7 @@ export default function AdminAccounts({ employee }) {
       email: form.email.trim(),
       company_name: form.role === 'ondernemer' ? form.company_name.trim() || null : null,
       active: form.active,
+      requires_operating_days: form.requires_operating_days,
     }
     setBusy(true)
     try {
@@ -283,6 +285,7 @@ export default function AdminAccounts({ employee }) {
                     {p.email}
                     {!p.auth_user_id && <span className="tag niet" style={{ marginLeft: 8 }}>geen login</span>}
                     {!p.active && <span className="tag niet" style={{ marginLeft: 8 }}>niet actief</span>}
+                    {p.requires_operating_days === false && <span className="tag" style={{ marginLeft: 8, background: '#fff4e2', color: '#8a571f' }}>vrijgesteld van uitbatingsdagen</span>}
                   </span>
                 </span>
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
@@ -362,6 +365,21 @@ export default function AdminAccounts({ employee }) {
             <div className="row-item" style={{ marginTop: 12 }}>
               <span>Actief</span>
               <button className={'sw' + (form.active ? ' on' : '')} onClick={() => setForm({ ...form, active: !form.active })} aria-label="Actief">
+                <span className="knob" />
+              </button>
+            </div>
+            <div className="row-item" style={{ marginTop: 8 }}>
+              <span>
+                Vrijgesteld van uitbatingsdagen
+                <div className="muted" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
+                  Aan = deze persoon (bv. regiomanager) hoeft géén uitbatingsdagen te doen, ook al heeft die ondernemer-koppelingen. Aan = vrijgesteld; uit = standaard (moet uitbaten als must_operate aanstaat).
+                </div>
+              </span>
+              <button
+                className={'sw' + (!form.requires_operating_days ? ' on' : '')}
+                onClick={() => setForm({ ...form, requires_operating_days: !form.requires_operating_days })}
+                aria-label="Vrijgesteld"
+              >
                 <span className="knob" />
               </button>
             </div>

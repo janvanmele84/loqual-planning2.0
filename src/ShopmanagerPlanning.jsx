@@ -136,7 +136,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       // Wie moet nog beschikbaarheden doorgeven? (ondernemers met uitbatingsplicht in deze winkel, niet afgekocht)
       const { data: es } = await supabase
         .from('entrepreneur_shops')
-        .select('entrepreneur_id, start_date, end_date, must_operate, employees(first_name, last_name)')
+        .select('entrepreneur_id, start_date, end_date, must_operate, operate_days, employees(first_name, last_name)')
         .eq('shop_id', shopId)
 
       const { data: bo } = await supabase
@@ -165,6 +165,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
           byEnt[r.entrepreneur_id] = {
             id: r.entrepreneur_id,
             name: [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ') || 'Onbekend',
+            operate_days: r.operate_days || 1,
           }
         }
       })
@@ -182,7 +183,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         })
       }
       const statusList = entList
-        .map((e) => ({ id: e.id, name: e.name, status: confirmedSet.has(e.id) ? 'bevestigd' : 'niet' }))
+        .map((e) => ({ id: e.id, name: e.name, operate_days: e.operate_days, status: confirmedSet.has(e.id) ? 'bevestigd' : 'niet' }))
         .sort((a, b) => {
           if (a.status !== b.status) return a.status === 'niet' ? -1 : 1
           return a.name.localeCompare(b.name)
@@ -208,7 +209,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     setShortList(null)
   }, [monthStart, shopId])
 
-  async function applyHandle(reason, shiftToMonth) {
+  async function applyHandle(reason, shiftToMonth, daysCount) {
     const { employeeId, name } = dialog
     setDialog(null)
     setBusy(true); setMsg(null)
@@ -219,11 +220,12 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         p_month: monthStart,
         p_reason: reason,
         p_shift_to_month: shiftToMonth || null,
+        p_days_count: daysCount ?? null,
       })
       if (error) throw error
       await load()
       const tail =
-        reason === 'paid' ? 'gemarkeerd als afgekocht' :
+        reason === 'paid' ? `gemarkeerd als afgekocht${daysCount ? ` (${daysCount} ${daysCount === 1 ? 'dag' : 'dagen'})` : ''}` :
         reason === 'shifted' ? `verschoven naar ${monthName(shiftToMonth)}` :
         'afgehandeld'
       setMsg({ kind: 'good', text: `${name} ${tail}.` })
@@ -234,8 +236,8 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
     }
   }
 
-  function markHandled(employeeId, name) {
-    setDialog({ kind: 'handle', employeeId, name })
+  function markHandled(employeeId, name, operate_days) {
+    setDialog({ kind: 'handle', employeeId, name, operate_days: operate_days || 1 })
   }
 
   async function doShuffle() {    if (!shopId) return
@@ -267,14 +269,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       return
     }
     setMsg(null)
-    setPicker({ date: dateStr, isExtra: true, loading: true, candidates: [] })
-    try {
-      const { data, error } = await supabase.rpc('candidates_for_slot', { p_shop: shopId, p_day: dateStr })
-      if (error) throw error
-      setPicker({ date: dateStr, isExtra: true, loading: false, candidates: data || [] })
-    } catch (e) {
-      setPicker({ date: dateStr, isExtra: true, loading: false, candidates: [], error: e?.message || String(e) })
-    }
+    await loadCandidates(dateStr, false, true)
   }
 
   async function onCellClick(dateStr) {
@@ -289,13 +284,20 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
       return
     }
     setMsg(null)
-    setPicker({ date: dateStr, loading: true, candidates: [] })
+    setPicker({ date: dateStr, loading: true, candidates: [], includeAll: false })
+    await loadCandidates(dateStr, false, false)
+  }
+
+  async function loadCandidates(dateStr, includeAll, isExtra) {
+    setPicker((prev) => ({ ...(prev || {}), date: dateStr, isExtra, includeAll, loading: true, candidates: prev?.candidates || [] }))
     try {
-      const { data, error } = await supabase.rpc('candidates_for_slot', { p_shop: shopId, p_day: dateStr })
+      const { data, error } = await supabase.rpc('candidates_for_slot', {
+        p_shop: shopId, p_day: dateStr, p_include_all: includeAll,
+      })
       if (error) throw error
-      setPicker({ date: dateStr, loading: false, candidates: data || [] })
+      setPicker({ date: dateStr, isExtra, includeAll, loading: false, candidates: data || [] })
     } catch (e) {
-      setPicker({ date: dateStr, loading: false, candidates: [], error: e?.message || String(e) })
+      setPicker({ date: dateStr, isExtra, includeAll, loading: false, candidates: [], error: e?.message || String(e) })
     }
   }
 
@@ -616,7 +618,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                               className="btn"
                               style={{ padding: '4px 10px', fontSize: 12 }}
                               disabled={busy}
-                              onClick={() => markHandled(p.id, p.name)}
+                              onClick={() => markHandled(p.id, p.name, p.operate_days)}
                               title="Markeer als afgehandeld — bv. dag verschoven naar volgende maand of zelf ingevuld"
                             >
                               Afgehandeld
@@ -769,29 +771,39 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
         const next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
         const appStart = new Date('2026-07-01')
         const prevAllowed = prev >= appStart
+        const od = dialog.operate_days || 1
+        const partialOptions = []
+        for (let i = 1; i < od; i++) partialOptions.push(i)
         return (
           <div style={pickerOverlay} onClick={() => setDialog(null)}>
             <div style={pickerDialog} onClick={(e) => e.stopPropagation()}>
               <h3 style={{ marginBottom: 6 }}>Afhandelen: {dialog.name}</h3>
               <div className="muted" style={{ marginBottom: 14, fontSize: 14 }}>
                 Voor {monthName(monthStart)} — kies hoe je deze ondernemer wil afhandelen.
+                {od > 1 && ` Deze ondernemer heeft ${od} uitbatingsdagen in deze winkel.`}
               </div>
               <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
-                onClick={() => applyHandle('paid', null)}>
-                Afgekocht (€200)
+                onClick={() => applyHandle('paid', null, null)}>
+                Afgekocht — alle {od > 1 ? `${od} dagen` : '1 dag'} (€{200 * od})
               </button>
+              {partialOptions.map((n) => (
+                <button key={n} className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
+                  onClick={() => applyHandle('paid', null, n)}>
+                  Gedeeltelijk afgekocht — {n} van {od} {n === 1 ? 'dag' : 'dagen'} (€{200 * n}, rest moet nog uitbaten)
+                </button>
+              ))}
               {prevAllowed && (
                 <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
-                  onClick={() => applyHandle('shifted', ymd(prev))}>
+                  onClick={() => applyHandle('shifted', ymd(prev), null)}>
                   Verschuiven naar {MONTHS[prev.getMonth()]} (vorige maand)
                 </button>
               )}
               <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
-                onClick={() => applyHandle('shifted', ymd(next))}>
+                onClick={() => applyHandle('shifted', ymd(next), null)}>
                 Verschuiven naar {MONTHS[next.getMonth()]} (volgende maand)
               </button>
               <button className="btn btn-block" style={{ marginBottom: 8 }} disabled={busy}
-                onClick={() => applyHandle('other', null)}>
+                onClick={() => applyHandle('other', null, null)}>
                 Andere afhandeling (manager regelt zelf)
               </button>
               <button className="btn btn-block" disabled={busy} onClick={() => setDialog(null)}>
@@ -819,16 +831,20 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                   // Cross-shop quota status
                   const hasQuota = c.quota_total != null && c.quota_total > 0
                   const allDone = hasQuota && c.quota_open === 0
+                  const isFallback = !!c.is_fallback
                   // Bepaal werkelijk effectieve label rekening houdend met quota
                   let effectiveLabel = c.label
-                  if (c.kind === 'mandatory' && allDone) {
+                  if (isFallback) {
+                    effectiveLabel = 'Niet doorgegeven — manueel'
+                  } else if (c.kind === 'mandatory' && allDone) {
                     effectiveLabel = 'Extra dag (alle verplichte al ingepland)'
                   } else if (c.kind === 'mandatory' && hasQuota && c.quota_open < c.quota_total) {
                     effectiveLabel = `Verplichte dag (${c.quota_open} van ${c.quota_total} open)`
                   }
                   const shopsText = c.assigned_shops || ''
+                  const rowStyle = isFallback ? { ...pickerRow, opacity: 0.65, fontStyle: 'italic' } : pickerRow
                   return (
-                    <button key={c.employee_id + c.kind} style={pickerRow} onClick={() => assignCandidate(c)}>
+                    <button key={c.employee_id + c.kind} style={rowStyle} onClick={() => assignCandidate(c)}>
                       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
                         <span style={{ fontWeight: 600 }}>{c.first_name}</span>
                         {shopsText && (
@@ -836,7 +852,7 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                         )}
                       </span>
                       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <span className="muted" style={{ fontSize: 13, color: allDone ? '#1565c0' : undefined }}>{effectiveLabel}</span>
+                        <span className="muted" style={{ fontSize: 13, color: allDone ? '#1565c0' : isFallback ? '#8a571f' : undefined }}>{effectiveLabel}</span>
                         {c.over_max && (
                           <span style={{ fontSize: 11.5, color: 'var(--danger)' }}>
                             ⚠ max. {c.max_extra} bereikt
@@ -848,7 +864,14 @@ export default function ShopmanagerPlanning({ employee, shopId, shopsMap }) {
                 })}
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, gap: 10, flexWrap: 'wrap' }}>
+              <button
+                className="btn"
+                style={{ fontSize: 12 }}
+                onClick={() => loadCandidates(picker.date, !picker.includeAll, !!picker.isExtra)}
+              >
+                {picker.includeAll ? 'Verberg niet-beschikbaren' : 'Toon ook niet-beschikbaren'}
+              </button>
               <button className="btn" onClick={() => setPicker(null)}>Sluiten</button>
             </div>
           </div>
