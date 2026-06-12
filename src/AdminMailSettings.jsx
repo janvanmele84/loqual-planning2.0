@@ -87,21 +87,13 @@ export default function AdminMailSettings() {
   async function triggerSend() {
     setBusy(true); setMsg(null)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const url = `${supabase.supabaseUrl}/functions/v1/send-mails`
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || supabase.supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-      })
-      const body = await res.json()
-      if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`)
-      setMsg({ kind: 'good', text: `Klaar. Verwerkt: ${body.processed || 0}, verzonden: ${body.sent || 0}, mislukt: ${body.failed || 0}.${body.skipped ? ' (Mail-verzending staat uitgeschakeld.)' : ''}` })
-      await load()
+      const { data, error } = await supabase.rpc('mail_trigger_send')
+      if (error) throw error
+      setMsg({ kind: 'good', text: 'Verzending gestart. De wachtrij wordt over enkele seconden vernieuwd…' })
+      // Even wachten zodat de Edge Function tijd heeft om te draaien, daarna herladen
+      setTimeout(() => { load() }, 4000)
     } catch (e) {
-      setMsg({ kind: 'err', text: e?.message || 'Verzending mislukt.' })
+      setMsg({ kind: 'err', text: e?.message || 'Verzending starten mislukt.' })
     } finally {
       setBusy(false)
     }
