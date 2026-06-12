@@ -406,33 +406,59 @@ export default function OndernemerCalendar({ employee, onLogout }) {
             </div>
           </div>
 
+          {locked && (
+            <div style={{
+              background: '#e8efe4', color: '#2f5a31', border: '1px solid #7fb869',
+              borderRadius: 12, padding: '12px 14px', marginBottom: 12, lineHeight: 1.4,
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>✓ Beschikbaarheden bevestigd</div>
+              <div style={{ fontSize: 13 }}>
+                Je hebt je beschikbaarheden voor deze maand al bevestigd en kan enkel nog toevoegen, niet aanpassen.
+		Wil je toch nog iets wijzigen? Neem contact op met je shopmanager.
+              </div>
+            </div>
+          )}
+
           {shops.some((s) => s.must_operate) && (
             <div className="card">
               <div className="section-title">Jouw uitbatingsdagen per winkel</div>
-              <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-                Zet de schakelaar aan om een dag af te kopen (€200). Een afgekochte winkel telt niet meer mee voor je minimum aantal beschikbaarheden.
-              </div>
+              {!locked && (
+                <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                  Zet de schakelaar aan om een dag af te kopen (€200). Een afgekochte winkel telt niet meer mee voor je minimum aantal beschikbaarheden.
+                </div>
+              )}
               {shops
                 .filter((s) => s.must_operate)
-                .map((s) => (
-                  <div className="row-item" key={s.shop_id}>
-                    <span>
-                      {s.name}
-                      <span className="muted" style={{ marginLeft: 8, fontSize: 13 }}>
-                        · {s.operate_days || 1} {(s.operate_days || 1) === 1 ? 'dag' : 'dagen'}
-                        {buyouts.has(s.shop_id) ? ' (afgekocht)' : ''}
+                .map((s) => {
+                  const isAfgekocht = buyouts.has(s.shop_id)
+                  return (
+                    <div className="row-item" key={s.shop_id}>
+                      <span>
+                        {s.name}
+                        <span className="muted" style={{ marginLeft: 8, fontSize: 13 }}>
+                          · {s.operate_days || 1} {(s.operate_days || 1) === 1 ? 'dag' : 'dagen'}
+                        </span>
                       </span>
-                    </span>
-                    <button
-                      className={'sw' + (buyouts.has(s.shop_id) ? ' on' : '')}
-                      onClick={() => toggleBuyout(s.shop_id)}
-                      disabled={locked}
-                      aria-label={`Afkoop ${s.name}`}
-                    >
-                      <span className="knob" />
-                    </button>
-                  </div>
-                ))}
+                      {locked ? (
+                        <span style={{
+                          fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 8,
+                          background: isAfgekocht ? '#fff2dd' : '#e8efe4',
+                          color: isAfgekocht ? '#8a571f' : '#2f5a31',
+                        }}>
+                          {isAfgekocht ? `Afgekocht (€${200 * (s.operate_days || 1)})` : 'Wordt uitgebaat'}
+                        </span>
+                      ) : (
+                        <button
+                          className={'sw' + (isAfgekocht ? ' on' : '')}
+                          onClick={() => toggleBuyout(s.shop_id)}
+                          aria-label={`Afkoop ${s.name}`}
+                        >
+                          <span className="knob" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
             </div>
           )}
 
