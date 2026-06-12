@@ -7,6 +7,7 @@ import AdminImport from './AdminImport.jsx'
 import BonusOverview from './BonusOverview.jsx'
 import AdminExtraBuyout from './AdminExtraBuyout.jsx'
 import AdminEmails from './AdminEmails.jsx'
+import AdminMailSettings from './AdminMailSettings.jsx'
 import AdminReleases from './AdminReleases.jsx'
 import AdminOverviews from './AdminOverviews.jsx'
 import AdminActionBanner from './AdminActionBanner.jsx'
@@ -40,7 +41,10 @@ export default function AdminHome({ employee, onLogout }) {
           Extra & afkoop
         </button>
         <button className={'tab' + (tab === 'mails' ? ' active' : '')} onClick={() => setTab('mails')}>
-          Mails
+          Mail-acties
+        </button>
+        <button className={'tab' + (tab === 'mailsys' ? ' active' : '')} onClick={() => setTab('mailsys')}>
+          Mail-systeem
         </button>
         <button className={'tab' + (tab === 'releases' ? ' active' : '')} onClick={() => setTab('releases')}>
           Vrijgaves
@@ -58,6 +62,7 @@ export default function AdminHome({ employee, onLogout }) {
         : tab === 'extra' ? <AdminExtraBuyout />
         : tab === 'releases' ? <AdminReleases />
         : tab === 'overzichten' ? <AdminOverviews />
+        : tab === 'mailsys' ? <AdminMailSettings />
         : <AdminEmails />}
     </Shell>
   )
