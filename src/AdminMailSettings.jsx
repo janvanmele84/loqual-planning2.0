@@ -126,7 +126,16 @@ export default function AdminMailSettings() {
   }
 
   const enabled = settings.mail_enabled === true
-  const testRecipient = (settings.mail_test_recipient || '').replace(/^"|"$/g, '')
+  // Defensive: handle both correct (plain string) and previously-corrupted (JSON-wrapped) values
+  const rawTest = settings.mail_test_recipient
+  const testRecipientStored = typeof rawTest === 'string'
+    ? (rawTest.startsWith('"') && rawTest.endsWith('"') ? rawTest.slice(1, -1) : rawTest)
+    : ''
+  const [testRecipientLocal, setTestRecipientLocal] = useState(testRecipientStored)
+
+  useEffect(() => {
+    setTestRecipientLocal(testRecipientStored)
+  }, [testRecipientStored])
 
   if (loading) return <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
 
@@ -162,14 +171,14 @@ export default function AdminMailSettings() {
               className="input"
               style={{ flex: 1 }}
               type="email"
-              value={testRecipient}
+              value={testRecipientLocal}
               placeholder="bv. jan@loqual.be (of leeg laten)"
-              onChange={(e) => setSettings({ ...settings, mail_test_recipient: JSON.stringify(e.target.value) })}
+              onChange={(e) => setTestRecipientLocal(e.target.value)}
             />
             <button
               className="btn"
               disabled={busy}
-              onClick={() => setSetting('mail_test_recipient', JSON.stringify(testRecipient))}
+              onClick={() => setSetting('mail_test_recipient', testRecipientLocal)}
             >
               Opslaan
             </button>
