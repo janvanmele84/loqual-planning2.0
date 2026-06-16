@@ -32,6 +32,24 @@ export default function AdminMailSettings() {
   const [msg, setMsg] = useState(null)
   const [testTo, setTestTo] = useState('')
 
+  // E-mail export
+  const [addrRole, setAddrRole] = useState('shopmanager')
+  const [addresses, setAddresses] = useState([])
+
+  const loadAddresses = useCallback(async (role) => {
+    try {
+      const { data, error } = await supabase.rpc('mail_addresses_by_role', {
+        p_role: role || null,
+      })
+      if (error) throw error
+      setAddresses(data || [])
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Adressen ophalen mislukt.' })
+    }
+  }, [])
+
+  useEffect(() => { loadAddresses(addrRole) }, [addrRole, loadAddresses])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -274,6 +292,79 @@ export default function AdminMailSettings() {
               )
             })}
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="section-title">E-mailadressen exporteren</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          Lijst van actieve medewerkers met een e-mailadres. Selecteer een rol en kopieer.
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {[
+            { v: 'shopmanager', l: 'Shopmanagers' },
+            { v: 'flexi',       l: 'Flexi\'s' },
+            { v: 'jobstudent',  l: 'Jobstudenten' },
+            { v: 'entrepreneur', l: 'Ondernemers' },
+            { v: '',            l: 'Alle' },
+          ].map((r) => (
+            <button
+              key={r.v || 'all'}
+              className={'btn' + (addrRole === r.v ? ' btn-primary' : '')}
+              style={{ fontSize: 12, padding: '4px 10px' }}
+              onClick={() => setAddrRole(r.v)}
+            >
+              {r.l}
+            </button>
+          ))}
+        </div>
+
+        {addresses.length === 0 ? (
+          <div className="muted" style={{ fontSize: 13, padding: 8 }}>Geen actieve medewerkers met e-mailadres voor deze rol.</div>
+        ) : (
+          <>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{addresses.length} adressen</div>
+            <textarea
+              readOnly
+              style={{
+                width: '100%', minHeight: 120, fontFamily: 'monospace', fontSize: 12,
+                padding: 8, border: '1px solid var(--line)', borderRadius: 8, resize: 'vertical',
+                background: 'var(--bg-soft, #f7f7f5)',
+              }}
+              value={addresses.map((a) => a.email).join('\n')}
+              onFocus={(e) => e.target.select()}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <button
+                className="btn"
+                onClick={() => {
+                  navigator.clipboard.writeText(addresses.map((a) => a.email).join('\n'))
+                  setMsg({ kind: 'good', text: `${addresses.length} adressen gekopieerd (één per regel).` })
+                }}
+              >
+                Kopieer (één per regel)
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  navigator.clipboard.writeText(addresses.map((a) => a.email).join(', '))
+                  setMsg({ kind: 'good', text: `${addresses.length} adressen gekopieerd (komma-gescheiden).` })
+                }}
+              >
+                Kopieer (komma)
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  const txt = addresses.map((a) => `"${a.full_name}" <${a.email}>`).join(', ')
+                  navigator.clipboard.writeText(txt)
+                  setMsg({ kind: 'good', text: 'Adressen met naam gekopieerd (Outlook-formaat).' })
+                }}
+              >
+                Kopieer met naam
+              </button>
+            </div>
+          </>
         )}
       </div>
 
