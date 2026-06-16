@@ -34,21 +34,24 @@ export default function AdminMailSettings() {
 
   // E-mail export
   const [addrRole, setAddrRole] = useState('shopmanager')
-  const [addresses, setAddresses] = useState([])
+  const [allAddresses, setAllAddresses] = useState([])
 
-  const loadAddresses = useCallback(async (role) => {
+  const loadAllAddresses = useCallback(async () => {
     try {
-      const { data, error } = await supabase.rpc('mail_addresses_by_role', {
-        p_role: role || null,
-      })
+      const { data, error } = await supabase.rpc('mail_addresses_all')
       if (error) throw error
-      setAddresses(data || [])
+      setAllAddresses(data || [])
     } catch (e) {
       setMsg({ kind: 'err', text: e?.message || 'Adressen ophalen mislukt.' })
     }
   }, [])
 
-  useEffect(() => { loadAddresses(addrRole) }, [addrRole, loadAddresses])
+  useEffect(() => { loadAllAddresses() }, [loadAllAddresses])
+
+  // Client-side filtering
+  const addresses = addrRole
+    ? allAddresses.filter((a) => a.role_name === addrRole)
+    : allAddresses
 
   const load = useCallback(async () => {
     setLoading(true)
