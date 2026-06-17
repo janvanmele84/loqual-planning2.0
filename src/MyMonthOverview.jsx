@@ -21,6 +21,22 @@ function icsDateTime(date, time) {
   return `${y}${m}${d}T${pad(hh)}${pad(mm)}00`
 }
 
+// Een maand M wordt voor medewerkers pas zichtbaar vanaf 1ste van M-1
+// (publicatie-datum). Daarvoor kunnen shopmanagers nog wijzigen.
+function isMonthPublishedForWorkers(monthStartIso) {
+  const [y, m] = monthStartIso.split('-').map(Number)
+  const publishDate = new Date(y, m - 2, 1)  // M-1 (1-based → 0-based + back 1)
+  publishDate.setHours(0, 0, 0, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today >= publishDate
+}
+function publishDateLabel(monthStartIso) {
+  const [y, m] = monthStartIso.split('-').map(Number)
+  const publishDate = new Date(y, m - 2, 1)
+  return `1 ${MONTHS[publishDate.getMonth()]} ${publishDate.getFullYear()}`
+}
+
 export default function MyMonthOverview({ employee, onClose }) {
   const today = new Date()
   const [month, setMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
@@ -121,46 +137,65 @@ export default function MyMonthOverview({ employee, onClose }) {
 
         {error && <div className="msg err">{error}</div>}
 
-        {loading ? (
-          <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
-        ) : rows.length === 0 ? (
-          <div className="muted" style={{ padding: 16, textAlign: 'center' }}>
-            Geen ingeplande dagen voor deze maand.
-          </div>
-        ) : (
-          <>
-            <div style={list}>
-              {rows.map((r, i) => (
-                <div key={i} style={row}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{dayName(r.shift_date)}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {(r.start_time || '').slice(0,5)} – {(r.end_time || '').slice(0,5)}
-                      {r.kind !== 'mandatory' && <> · <em>extra</em></>}
-                      {r.makeup_for_month && <> · ⏪ inhaaldag</>}
+        {(() => {
+          const role = employee?.role
+          const isPrivileged = role === 'admin' || role === 'shopmanager' || role === 'boekhouding'
+          const published = isMonthPublishedForWorkers(monthStart)
+          if (!isPrivileged && !published) {
+            return (
+              <div style={{
+                background: '#fff7e8', border: '1px solid #d8b97a', color: '#8a571f',
+                borderRadius: 12, padding: '14px 16px', lineHeight: 1.5,
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Nog niet gepubliceerd</div>
+                <div style={{ fontSize: 13 }}>
+                  De planning voor {monthLabel(monthStart)} wordt gepubliceerd op {publishDateLabel(monthStart)}.
+                  Tot dan kunnen je shopmanagers nog wijzigingen aanbrengen, dus de definitieve planning is nog niet bekend.
+                </div>
+              </div>
+            )
+          }
+          return loading ? (
+            <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
+          ) : rows.length === 0 ? (
+            <div className="muted" style={{ padding: 16, textAlign: 'center' }}>
+              Geen ingeplande dagen voor deze maand.
+            </div>
+          ) : (
+            <>
+              <div style={list}>
+                {rows.map((r, i) => (
+                  <div key={i} style={row}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{dayName(r.shift_date)}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {(r.start_time || '').slice(0,5)} – {(r.end_time || '').slice(0,5)}
+                        {r.kind !== 'mandatory' && <> · <em>extra</em></>}
+                        {r.makeup_for_month && <> · ⏪ inhaaldag</>}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 500 }}>{r.shop_name}</div>
+                      {r.shop_address && <div className="muted" style={{ fontSize: 11 }}>{r.shop_address}</div>}
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 500 }}>{r.shop_name}</div>
-                    {r.shop_address && <div className="muted" style={{ fontSize: 11 }}>{r.shop_address}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" onClick={downloadICS}>
-                📅 Voeg toe aan agenda (.ics)
-              </button>
-              <button className="btn" onClick={copyText}>
-                {copied ? '✓ Gekopieerd' : '📋 Kopieer overzicht'}
-              </button>
-            </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-              Het .ics-bestand kun je openen in Google Agenda, Apple Calendar of Outlook om alle dagen tegelijk te importeren.
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={downloadICS}>
+                  📅 Voeg toe aan agenda (.ics)
+                </button>
+                <button className="btn" onClick={copyText}>
+                  {copied ? '✓ Gekopieerd' : '📋 Kopieer overzicht'}
+                </button>
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                Het .ics-bestand kun je openen in Google Agenda, Apple Calendar of Outlook om alle dagen tegelijk te importeren.
             </div>
           </>
-        )}
+          )
+        })()}
       </div>
     </div>
   )
