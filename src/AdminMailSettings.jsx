@@ -308,7 +308,7 @@ export default function AdminMailSettings() {
             { v: 'shopmanager', l: 'Shopmanagers' },
             { v: 'flexi',       l: 'Flexi\'s' },
             { v: 'jobstudent',  l: 'Jobstudenten' },
-            { v: 'entrepreneur', l: 'Ondernemers' },
+            { v: 'ondernemer',  l: 'Ondernemers' },
             { v: '',            l: 'Alle' },
           ].map((r) => (
             <button
