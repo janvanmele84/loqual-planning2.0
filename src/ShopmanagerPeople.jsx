@@ -140,17 +140,11 @@ export default function ShopmanagerPeople({ shopId }) {
           if (!empId) {
             const { data: ins, error: insErr } = await supabase
               .from('employees')
-              .insert({ role: 'ondernemer', first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, company_name: e.company_name.trim() || null, email: e.email.trim() })
+              .insert({ role: 'ondernemer', first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, company_name: e.company_name.trim() || null, email: e.email.trim(), active: true })
               .select('id').single()
             if (insErr) throw insErr
             empId = ins.id
-            // Direct ook een login aanmaken (tijdelijk standaardwachtwoord)
-            try {
-              await supabase.rpc('admin_create_login', { p_employee_id: empId, p_password: 'Loqual2026' })
-            } catch (loginErr) {
-              // niet blokkerend — admin kan dit later doen
-              console.warn('Login aanmaken mislukt', loginErr)
-            }
+            // Login + welkom-mail worden automatisch aangemaakt door de auto-login trigger op employees.
           }
           const { error: linkErr } = await supabase.from('entrepreneur_shops').insert({
             entrepreneur_id: empId, shop_id: shopId, start_date: e.start_date || ymd(new Date()),
@@ -179,11 +173,7 @@ export default function ShopmanagerPeople({ shopId }) {
             .insert({ role: e.role, first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, email: e.email.trim(), active: e.active })
             .select('id').single()
           if (insErr) throw insErr
-          try {
-            await supabase.rpc('admin_create_login', { p_employee_id: ins.id, p_password: 'Loqual2026' })
-          } catch (loginErr) {
-            console.warn('Login aanmaken mislukt', loginErr)
-          }
+          // Login + welkom-mail worden automatisch aangemaakt door de auto-login trigger op employees.
         } else {
           const { error: upErr } = await supabase.from('employees')
             .update({ first_name: e.first_name.trim(), last_name: e.last_name.trim() || null, email: e.email.trim(), active: e.active })
@@ -193,7 +183,7 @@ export default function ShopmanagerPeople({ shopId }) {
       }
       setEditor(null)
       await load()
-      setMsg({ kind: 'good', text: e.mode === 'add' ? 'Opgeslagen. Login is aangemaakt — tijdelijk wachtwoord: Loqual2026.' : 'Opgeslagen.' })
+      setMsg({ kind: 'good', text: e.mode === 'add' ? 'Opgeslagen. Er wordt automatisch een welkom-mail verstuurd met tijdelijk wachtwoord Loqual2026.' : 'Opgeslagen.' })
     } catch (err) {
       const m = err?.message || ''
       setMsg({ kind: 'err', text: m.includes('duplicate') || m.includes('unique') ? 'Dit e-mailadres is al in gebruik.' : 'Opslaan mislukt.' })
@@ -431,7 +421,7 @@ export default function ShopmanagerPeople({ shopId }) {
             )}
 
             {editor.mode === 'add' && (
-              <div className="hint" style={{ marginTop: 10 }}>De persoon kan inloggen zodra zijn/haar account gekoppeld is.</div>
+              <div className="hint" style={{ marginTop: 10 }}>Bij opslaan krijgt de persoon automatisch een login en een welkom-mail met tijdelijk wachtwoord Loqual2026. Bij eerste keer inloggen moet er een nieuw wachtwoord ingesteld worden.</div>
             )}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
