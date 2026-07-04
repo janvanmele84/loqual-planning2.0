@@ -94,7 +94,7 @@ export default function AdminAccounts({ employee }) {
       }
       setDialog(null)
       await load()
-      setMsg({ kind: 'good', text: dialog.kind === 'new' ? 'Account toegevoegd. Maak nog een login aan met dit e-mailadres.' : 'Bewaard.' })
+      setMsg({ kind: 'good', text: dialog.kind === 'new' ? 'Account toegevoegd. Login en welkom-mail worden automatisch verstuurd.' : 'Bewaard.' })
     } catch (e) {
       const dup = (e?.message || '').toLowerCase().includes('duplicate')
       setMsg({ kind: 'err', text: dup ? 'Dit e-mailadres bestaat al.' : 'Bewaren mislukt.' })
@@ -151,66 +151,6 @@ export default function AdminAccounts({ employee }) {
     }
   }
 
-  async function bulkCreate(ids) {
-    if (!ids.length) return
-    const ok = window.confirm(
-      `Voor ${ids.length} medewerker(s) wordt een login aangemaakt met tijdelijk wachtwoord "Loqual2026". Iedereen wordt bij eerste login gevraagd om zelf een nieuw wachtwoord te kiezen.\n\nDoorgaan?`,
-    )
-    if (!ok) return
-    setBusy(true); setMsg(null)
-    let created = 0, failed = 0
-    const errors = []
-    for (const id of ids) {
-      try {
-        const { error } = await supabase.rpc('admin_create_login', { p_employee_id: id })
-        if (error) throw error
-        created += 1
-      } catch (e) {
-        failed += 1
-        if (errors.length < 3) errors.push(e?.message || 'onbekende fout')
-      }
-    }
-    const bits = []
-    if (created) bits.push(`${created} aangemaakt`)
-    if (failed) bits.push(`${failed} mislukt`)
-    setMsg({
-      kind: failed ? 'err' : 'good',
-      text: `${bits.join(', ') || 'Geen wijzigingen'}. Tijdelijk wachtwoord: "Loqual2026".${errors.length ? ' Fout: ' + errors.join('; ') : ''}`,
-    })
-    await load()
-    setBusy(false)
-  }
-
-  async function invite(ids, label) {
-    if (!ids.length) return
-    setBusy(true); setMsg(null)
-    try {
-      const { data, error } = await supabase.functions.invoke('invite-users', {
-        body: {
-          employee_ids: ids,
-          redirect_to: window.location.origin + window.location.pathname,
-        },
-      })
-      if (error) throw error
-      const r = data || {}
-      const bits = []
-      if (r.invited) bits.push(`${r.invited} uitgenodigd`)
-      if (r.reLinked) bits.push(`${r.reLinked} hergekoppeld (paswoord-reset verstuurd)`)
-      if (r.skipped) bits.push(`${r.skipped} overgeslagen`)
-      if (r.failed) bits.push(`${r.failed} mislukt`)
-      const text = bits.length ? bits.join(', ') : 'Geen wijzigingen.'
-      setMsg({
-        kind: r.failed ? 'err' : 'good',
-        text: `${label}: ${text}.${r.errors?.length ? ' Fout: ' + r.errors.slice(0, 3).join('; ') : ''}`,
-      })
-      await load()
-    } catch (e) {
-      setMsg({ kind: 'err', text: e?.message || 'Versturen mislukt.' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <>
       <button className="btn btn-primary btn-block" onClick={openNew} disabled={busy} style={{ marginBottom: 12 }}>
@@ -232,42 +172,6 @@ export default function AdminAccounts({ employee }) {
           </button>
         ))}
       </div>
-
-      {(() => {
-        const noLoginPool = people.filter((p) => p.active && !p.auth_user_id && p.email)
-        const noLogin = noLoginPool.length
-        if (noLogin === 0) return null
-        return (
-          <div className="card" style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 8 }}>
-              <strong>{noLogin}</strong> actieve medewerker(s) hebben nog geen login.
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                className="btn btn-primary"
-                style={{ padding: '6px 12px', fontSize: 13 }}
-                disabled={busy}
-                onClick={() => bulkCreate(noLoginPool.map((p) => p.id))}
-              >
-                Logins aanmaken (zonder mail)
-              </button>
-              <button
-                className="btn"
-                style={{ padding: '6px 12px', fontSize: 13 }}
-                disabled={busy}
-                onClick={() => invite(noLoginPool.map((p) => p.id), `Bulkuitnodiging (${noLogin})`)}
-              >
-                Mail-uitnodigingen versturen
-              </button>
-            </div>
-            <div className="hint" style={{ marginBottom: 0, marginTop: 8 }}>
-              "Zonder mail" geeft iedereen tijdelijk hetzelfde wachtwoord; bij eerste login moet de gebruiker
-              er zelf een kiezen. "Via mail" stuurt elke medewerker een persoonlijke uitnodigingslink (vereist
-              dat de auth-SMTP in Supabase ingesteld is).
-            </div>
-          </div>
-        )
-      })()}
 
       <div className="card">
         {loading ? (
@@ -291,16 +195,6 @@ export default function AdminAccounts({ employee }) {
                   </span>
                 </span>
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                  {!p.auth_user_id && p.active && p.email && (
-                    <button
-                      className="btn"
-                      style={{ padding: '6px 10px', fontSize: 13 }}
-                      onClick={() => bulkCreate([p.id])}
-                      disabled={busy}
-                    >
-                      Login aanmaken
-                    </button>
-                  )}
                   <button className="btn" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => openEdit(p)} disabled={busy}>
                     Bewerken
                   </button>
@@ -392,7 +286,7 @@ export default function AdminAccounts({ employee }) {
             </div>
             {dialog.kind === 'new' && (
               <div className="hint" style={{ marginBottom: 0 }}>
-                Dit maakt de persoon aan. De login (met wachtwoord) maak je nog apart aan in Authentication met hetzelfde e-mailadres.
+                Bij bewaren wordt automatisch een login aangemaakt en de welkom-mail met tijdelijk wachtwoord verstuurd.
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
