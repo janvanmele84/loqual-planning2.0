@@ -34,10 +34,8 @@ function buildCalendarGrid(monthStart) {
 export default function AdminPlanning() {
   const [monthStart, setMonthStart] = useState(() => firstOfMonth(new Date()))
   const [shops, setShops] = useState([])
-  const [shifts, setShifts] = useState([])
+  const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-
-  const monthEnd = useMemo(() => firstOfNextMonth(monthStart), [monthStart])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -49,42 +47,55 @@ export default function AdminPlanning() {
         .order('name')
       setShops(shopsData || [])
 
-      const { data: shiftsData } = await supabase
-        .from('shifts')
-        .select('id, shop_id, shift_date, assignments(employee_id, kind, employees(first_name))')
-        .gte('shift_date', ymd(monthStart))
-        .lt('shift_date', ymd(monthEnd))
-      setShifts(shiftsData || [])
+      const { data: rowsData, error } = await supabase.rpc('admin_planning_month', {
+        p_month: ymd(monthStart),
+      })
+      if (error) throw error
+      setRows(rowsData || [])
     } finally {
       setLoading(false)
     }
-  }, [monthStart, monthEnd])
+  }, [monthStart])
 
   useEffect(() => { load() }, [load])
 
-  // Map "shop_id:YYYY-MM-DD" -> array van assignments
+  // Map "shop_id:YYYY-MM-DD" -> array van namen (of [] als shift zonder assignments)
   const shiftMap = useMemo(() => {
     const m = new Map()
-    shifts.forEach((s) => {
-      const key = `${s.shop_id}:${s.shift_date}`
-      m.set(key, s.assignments || [])
+    rows.forEach((r) => {
+      const key = `${r.shop_id}:${r.shift_date}`
+      const existing = m.get(key) || []
+      // employee_id kan null zijn (shift zonder assignments)
+      if (r.employee_id) {
+        existing.push(r.first_name || '?')
+      }
+      m.set(key, existing)
     })
     return m
-  }, [shifts])
+  }, [rows])
 
   const days = useMemo(() => buildCalendarGrid(monthStart), [monthStart])
 
-  // Aantal gaten per winkel voor de badge
+  // Aantal gaten per winkel: shifts zonder assignments
   const gapsPerShop = useMemo(() => {
     const m = new Map()
     shops.forEach((s) => m.set(s.id, 0))
-    shifts.forEach((s) => {
-      if ((s.assignments || []).length === 0) {
-        m.set(s.shop_id, (m.get(s.shop_id) || 0) + 1)
+    // Groepeer per shop+datum, tel unieke datums met 0 employees
+    const shiftIndex = new Map()
+    rows.forEach((r) => {
+      const key = `${r.shop_id}:${r.shift_date}`
+      if (!shiftIndex.has(key)) {
+        shiftIndex.set(key, { shop_id: r.shop_id, hasEmployee: false })
+      }
+      if (r.employee_id) shiftIndex.get(key).hasEmployee = true
+    })
+    shiftIndex.forEach((v) => {
+      if (!v.hasEmployee) {
+        m.set(v.shop_id, (m.get(v.shop_id) || 0) + 1)
       }
     })
     return m
-  }, [shops, shifts])
+  }, [shops, rows])
 
   return (
     <div>
@@ -152,9 +163,9 @@ function ShopCalendar({ shop, days, shiftMap, gaps }) {
         {days.map((day, idx) => {
           if (!day) return <div key={idx} style={{ height: 40 }} />
           const key = `${shop.id}:${ymd(day)}`
-          const assignments = shiftMap.get(key)
-          const closed = assignments === undefined
-          const empty = !closed && assignments.length === 0
+          const names = shiftMap.get(key)
+          const closed = names === undefined
+          const empty = !closed && names.length === 0
           const dayNum = day.getDate()
 
           if (closed) {
@@ -188,7 +199,7 @@ function ShopCalendar({ shop, days, shiftMap, gaps }) {
             )
           }
 
-          const names = assignments.map((a) => a.employees?.first_name || '?').join(', ')
+          const namesText = names.join(', ')
           return (
             <div
               key={idx}
@@ -197,11 +208,11 @@ function ShopCalendar({ shop, days, shiftMap, gaps }) {
                 borderRadius: 3, display: 'flex', flexDirection: 'column',
                 padding: '2px 4px', overflow: 'hidden',
               }}
-              title={names}
+              title={namesText}
             >
               <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'right', lineHeight: 1 }}>{dayNum}</div>
               <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, lineHeight: 1.2, marginTop: 2 }}>
-                {names}
+                {namesText}
               </div>
             </div>
           )

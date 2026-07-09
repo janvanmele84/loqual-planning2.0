@@ -145,53 +145,10 @@ export default function AdminMailSettings() {
     }
   }
 
-  const enabled = settings.mail_enabled === true
-
   if (loading) return <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
 
   return (
     <>
-      <div className="card">
-        <div className="section-title">Mail-instellingen</div>
-
-        <div className="row-item">
-          <span>
-            <strong>Verzending actief</strong>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Globale kill-switch — als deze uit staat blijven alle mails in de wachtrij staan.
-            </div>
-          </span>
-          <button
-            className={'sw' + (enabled ? ' on' : '')}
-            disabled={busy}
-            onClick={() => setSetting('mail_enabled', !enabled)}
-            aria-label="Verzending actief"
-          >
-            <span className="knob" />
-          </button>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="section-title">Testbericht versturen</div>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-          Maakt een testmail aan in de wachtrij. Daarna kun je hem onmiddellijk versturen via de knop "Nu verzenden" hieronder.
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            className="input"
-            style={{ flex: 1 }}
-            type="email"
-            value={testTo}
-            placeholder="ontvanger e-mailadres"
-            onChange={(e) => setTestTo(e.target.value)}
-          />
-          <button className="btn btn-primary" disabled={busy || !testTo} onClick={sendTest}>
-            Testmail aanmaken
-          </button>
-        </div>
-      </div>
-
       <div className="card">
         <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Wachtrij ({outbox.length})</span>
