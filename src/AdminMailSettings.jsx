@@ -111,7 +111,6 @@ export default function AdminMailSettings() {
       const { data, error } = await supabase.rpc('mail_trigger_send')
       if (error) throw error
       setMsg({ kind: 'good', text: 'Verzending gestart. De wachtrij wordt over enkele seconden vernieuwd…' })
-      // Even wachten zodat de Edge Function tijd heeft om te draaien, daarna herladen
       setTimeout(() => { load() }, 4000)
     } catch (e) {
       setMsg({ kind: 'err', text: e?.message || 'Verzending starten mislukt.' })
@@ -147,16 +146,6 @@ export default function AdminMailSettings() {
   }
 
   const enabled = settings.mail_enabled === true
-  // Defensive: handle both correct (plain string) and previously-corrupted (JSON-wrapped) values
-  const rawTest = settings.mail_test_recipient
-  const testRecipientStored = typeof rawTest === 'string'
-    ? (rawTest.startsWith('"') && rawTest.endsWith('"') ? rawTest.slice(1, -1) : rawTest)
-    : ''
-  const [testRecipientLocal, setTestRecipientLocal] = useState(testRecipientStored)
-
-  useEffect(() => {
-    setTestRecipientLocal(testRecipientStored)
-  }, [testRecipientStored])
 
   if (loading) return <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
 
@@ -180,30 +169,6 @@ export default function AdminMailSettings() {
           >
             <span className="knob" />
           </button>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <label className="flbl">Test-modus (optioneel)</label>
-          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-            Indien ingevuld worden <strong>alle</strong> uitgaande mails naar dit adres gestuurd, met de oorspronkelijke ontvanger als prefix in het onderwerp. Laat leeg om productie te activeren.
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              className="input"
-              style={{ flex: 1 }}
-              type="email"
-              value={testRecipientLocal}
-              placeholder="bv. jan@loqual.be (of leeg laten)"
-              onChange={(e) => setTestRecipientLocal(e.target.value)}
-            />
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() => setSetting('mail_test_recipient', testRecipientLocal)}
-            >
-              Opslaan
-            </button>
-          </div>
         </div>
       </div>
 
