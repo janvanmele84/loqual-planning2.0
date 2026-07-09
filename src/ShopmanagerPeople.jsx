@@ -208,6 +208,22 @@ export default function ShopmanagerPeople({ shopId }) {
     }
   }
 
+  async function doResetPassword() {
+    const d = dialog
+    setDialog(null)
+    if (!d?.empId) return
+    setBusy(true)
+    try {
+      const { error } = await supabase.rpc('admin_reset_password', { p_employee_id: d.empId })
+      if (error) throw error
+      setMsg({ kind: 'good', text: `Wachtwoord van ${d.name} teruggezet naar Loqual2026. Er is een reset-mail verstuurd.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: e?.message || 'Reset mislukt.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const q = search.trim().toLowerCase()
   const filteredOndernemers = useMemo(() => {
     if (!q) return ondernemers
@@ -270,7 +286,8 @@ export default function ShopmanagerPeople({ shopId }) {
               <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => setInfoFiche(o.employeeId)}>Infofiche</button>
                 <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => editOndernemer(o)}>Bewerken</button>
-                <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => setDialog({ linkId: o.linkId, name: `${o.first_name} ${o.last_name}` })}>Verwijderen</button>
+                <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => setDialog({ kind: 'reset', empId: o.employeeId, name: `${o.first_name} ${o.last_name}` })} title="Wachtwoord terugzetten op Loqual2026">Reset ww</button>
+                <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => setDialog({ kind: 'remove', linkId: o.linkId, name: `${o.first_name} ${o.last_name}` })}>Verwijderen</button>
               </span>
             </div>
           ))
@@ -298,6 +315,7 @@ export default function ShopmanagerPeople({ shopId }) {
                   <span className="knob" />
                 </button>
                 <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => editWorker(w)}>Bewerken</button>
+                <button className="btn" style={{ padding: '5px 10px', fontSize: 13 }} onClick={() => setDialog({ kind: 'reset', empId: w.id, name: `${w.first_name} ${w.last_name || ''}`.trim() })} title="Wachtwoord terugzetten op Loqual2026">Reset ww</button>
               </span>
             </div>
           ))
@@ -433,11 +451,20 @@ export default function ShopmanagerPeople({ shopId }) {
       )}
 
       <ConfirmDialog
-        open={dialog !== null}
+        open={dialog?.kind === 'remove'}
         title="Ondernemer uit winkel halen?"
         message={`Wil je ${dialog?.name || 'deze ondernemer'} uit deze winkel halen? Het account blijft bestaan (de ondernemer kan in een andere winkel liggen).`}
         confirmLabel="Ja, uit winkel halen"
         onConfirm={doRemove}
+        onCancel={() => setDialog(null)}
+      />
+
+      <ConfirmDialog
+        open={dialog?.kind === 'reset'}
+        title="Wachtwoord resetten?"
+        message={`Het wachtwoord van ${dialog?.name || 'deze persoon'} wordt teruggezet naar Loqual2026. Er gaat automatisch een reset-mail naar hun mailbox. Bij de volgende login moet er meteen een nieuw wachtwoord ingesteld worden.`}
+        confirmLabel="Ja, resetten"
+        onConfirm={doResetPassword}
         onCancel={() => setDialog(null)}
       />
 
