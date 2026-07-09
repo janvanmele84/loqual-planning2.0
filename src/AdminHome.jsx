@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Shell from './Shell.jsx'
+import AdminPlanning from './AdminPlanning.jsx'
 import AdminShops from './AdminShops.jsx'
 import AdminManagers from './AdminManagers.jsx'
 import AdminAccounts from './AdminAccounts.jsx'
@@ -11,13 +12,16 @@ import AdminReleases from './AdminReleases.jsx'
 import AdminOverviews from './AdminOverviews.jsx'
 
 export default function AdminHome({ employee, onLogout }) {
-  const [tab, setTab] = useState('winkels')
+  const [tab, setTab] = useState('planning')
 
   return (
     <Shell employee={employee} onLogout={onLogout}>
       <div className="section-title" style={{ marginBottom: 12 }}>Beheer</div>
 
       <div className="tabs">
+        <button className={'tab' + (tab === 'planning' ? ' active' : '')} onClick={() => setTab('planning')}>
+          Planning
+        </button>
         <button className={'tab' + (tab === 'winkels' ? ' active' : '')} onClick={() => setTab('winkels')}>
           Winkels
         </button>
@@ -47,7 +51,8 @@ export default function AdminHome({ employee, onLogout }) {
         </button>
       </div>
 
-      {tab === 'winkels' ? <AdminShops />
+      {tab === 'planning' ? <AdminPlanning />
+        : tab === 'winkels' ? <AdminShops />
         : tab === 'managers' ? <AdminManagers />
         : tab === 'accounts' ? <AdminAccounts employee={employee} />
         : tab === 'import' ? <AdminImport />
