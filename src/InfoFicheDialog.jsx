@@ -16,9 +16,10 @@ function monthLabel(iso) {
 
 function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01` }
 
-export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
+export default function InfoFicheDialog({ employeeId, monthStart, employeeRole, onClose }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [role, setRole] = useState(employeeRole || null)
   // Maand-navigatie binnen de dialoog (default = doorgegeven monthStart)
   const initial = monthStart
     ? new Date(monthStart)
@@ -35,7 +36,22 @@ export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
     setError(null)
     setData(null)
     try {
-      const { data: result, error: err } = await supabase.rpc('entrepreneur_info_sheet', {
+      // Als rol niet vooraf gekend, haal die eerst op
+      let effectiveRole = role
+      if (!effectiveRole) {
+        const { data: emp, error: e1 } = await supabase
+          .from('employees')
+          .select('role')
+          .eq('id', employeeId)
+          .single()
+        if (e1) throw e1
+        effectiveRole = emp?.role
+        setRole(effectiveRole)
+      }
+      const rpcName = (effectiveRole === 'flexi' || effectiveRole === 'jobstudent')
+        ? 'worker_info_sheet'
+        : 'entrepreneur_info_sheet'
+      const { data: result, error: err } = await supabase.rpc(rpcName, {
         p_employee_id: employeeId, p_month: ymd(currentMonth),
       })
       if (err) throw err
@@ -43,7 +59,7 @@ export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
     } catch (e) {
       setError(e?.message || String(e))
     }
-  }, [employeeId, currentMonth])
+  }, [employeeId, currentMonth, role])
 
   useEffect(() => { load() }, [load])
 
@@ -73,6 +89,72 @@ export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
 
         {!data ? (
           error ? <p className="muted">Fout: {error}</p> : <p className="muted">Laden…</p>
+        ) : (data.employee?.role === 'flexi' || data.employee?.role === 'jobstudent') ? (
+          <>
+            {/* Beschikbaarheden */}
+            <div style={card}>
+              <div style={cardTitle}>Doorgegeven beschikbaarheden</div>
+              {data.submission ? (
+                <>
+                  <div style={{ fontSize: 13 }}>
+                    <strong>{(data.submission.available_days || []).length}</strong> dagen aangevinkt
+                  </div>
+                  <div style={{ fontSize: 13, marginTop: 4 }}>
+                    Status: {data.submission.confirmed_at
+                      ? <span style={tag('green')}>Bevestigd</span>
+                      : <span style={tag('red')}>Niet bevestigd</span>}
+                  </div>
+                  {(data.submission.available_days || []).length > 0 && (
+                    <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                      Dagen: {data.submission.available_days.map(fmt).join(', ')}
+                    </div>
+                  )}
+                  {(data.submission.preferred_shops || []).length > 0 && (
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                      Voorkeur winkels: {data.submission.preferred_shops.join(', ')}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="muted" style={{ fontSize: 13 }}>Niets doorgegeven voor deze maand.</div>
+              )}
+            </div>
+
+            {/* Effectief gewerkt */}
+            <div style={card}>
+              <div style={cardTitle}>Effectief gewerkt</div>
+              {(data.worked || []).length === 0 ? (
+                <div className="muted" style={{ fontSize: 13 }}>Nog niet ingepland deze maand.</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, marginBottom: 6 }}>
+                    <strong>{data.worked.length}</strong> dagen gewerkt
+                  </div>
+                  {data.worked.map((w, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex', justifyContent: 'space-between',
+                      fontSize: 13, padding: '4px 0',
+                      borderBottom: idx < data.worked.length - 1 ? '1px solid var(--line)' : 'none',
+                    }}>
+                      <span>{fmt(w.shift_date)} — {w.shop_name}</span>
+                      <span className="muted" style={{ fontSize: 12 }}>{w.kind}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* Kort overzicht */}
+            {data.totals && (
+              <div style={card}>
+                <div style={cardTitle}>Kort overzicht</div>
+                <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                  Aangevinkte beschikbaarheid: <strong>{data.totals.available_count}</strong><br/>
+                  Effectief gewerkt: <strong>{data.totals.worked_count}</strong>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <>
             {/* Submission status */}
@@ -149,6 +231,11 @@ export default function InfoFicheDialog({ employeeId, monthStart, onClose }) {
                       {(s.regular_dates || []).length > 0 && (
                         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                           Ingepland op: {s.regular_dates.map(fmt).join(', ')}
+                        </div>
+                      )}
+                      {(s.extra_dates || []).length > 0 && (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          Extra dagen: {s.extra_dates.map(fmt).join(', ')}
                         </div>
                       )}
                       {hasBuyout && (
