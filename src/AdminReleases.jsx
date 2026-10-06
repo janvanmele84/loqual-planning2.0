@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
+import AdminShufflePanel from './AdminShufflePanel.jsx'
 
 const MONTHS = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
 
@@ -125,6 +126,7 @@ export default function AdminReleases() {
           <span style={{ ...legend, ...cell.orange, marginLeft: 12 }}>auto</span> automatisch vrijgegeven
         </div>
       </div>
+      <AdminShufflePanel />
     </>
   )
 }
