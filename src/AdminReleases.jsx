@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import AdminShufflePanel from './AdminShufflePanel.jsx'
+import AdminReleasePanel from './AdminReleasePanel.jsx'
 
 const MONTHS = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec']
 
@@ -127,6 +128,7 @@ export default function AdminReleases() {
         </div>
       </div>
       <AdminShufflePanel />
+      <AdminReleasePanel />
     </>
   )
 }
