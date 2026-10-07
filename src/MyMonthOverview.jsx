@@ -44,13 +44,22 @@ export default function MyMonthOverview({ employee, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
+  // null = nog niet geladen, true/false = resultaat van is_month_published_for_employee
+  const [publishedServer, setPublishedServer] = useState(null)
 
   const monthStart = ymd(month)
 
   const load = useCallback(async () => {
     if (!employee?.id) return
     setLoading(true); setError(null)
+    setPublishedServer(null)
     try {
+      // Check publicatie-status via server-RPC (combineert normale cyclus + admin-override)
+      const { data: pubData } = await supabase.rpc('is_month_published_for_employee', {
+        p_employee_id: employee.id, p_month: monthStart,
+      })
+      setPublishedServer(pubData === true)
+
       const { data, error } = await supabase.rpc('my_assignments_month', {
         p_employee_id: employee.id, p_month: monthStart,
       })
@@ -140,7 +149,10 @@ export default function MyMonthOverview({ employee, onClose }) {
         {(() => {
           const role = employee?.role
           const isPrivileged = role === 'admin' || role === 'shopmanager' || role === 'boekhouding'
-          const published = isMonthPublishedForWorkers(monthStart)
+          // Server-check is leidend wanneer die geladen is; anders fallback op datum-regel
+          const published = publishedServer === null
+            ? isMonthPublishedForWorkers(monthStart)
+            : publishedServer
           if (!isPrivileged && !published) {
             return (
               <div style={{
