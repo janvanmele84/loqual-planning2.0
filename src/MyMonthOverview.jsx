@@ -149,11 +149,13 @@ export default function MyMonthOverview({ employee, onClose }) {
         {(() => {
           const role = employee?.role
           const isPrivileged = role === 'admin' || role === 'shopmanager' || role === 'boekhouding'
-          // Server-check is leidend wanneer die geladen is; anders fallback op datum-regel
-          const published = publishedServer === null
-            ? isMonthPublishedForWorkers(monthStart)
-            : publishedServer
-          if (!isPrivileged && !published) {
+          // Alleen de server bepaalt of de maand gepubliceerd is. Zolang
+          // de RPC niet geantwoord heeft, toon loading (geen flikker).
+          if (publishedServer === null && !isPrivileged) {
+            return <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
+          }
+          const published = isPrivileged || publishedServer === true
+          if (!published) {
             return (
               <div style={{
                 background: '#fff7e8', border: '1px solid #d8b97a', color: '#8a571f',

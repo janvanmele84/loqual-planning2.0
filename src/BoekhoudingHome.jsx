@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient'
 import Shell from './Shell.jsx'
 import AdminExtraBuyout from './AdminExtraBuyout.jsx'
 import BoekhoudingReport from './BoekhoudingReport.jsx'
+import AdminPlanning from './AdminPlanning.jsx'
 
 const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
   'juli', 'augustus', 'september', 'oktober', 'november', 'december']
@@ -51,7 +52,7 @@ export default function BoekhoudingHome({ employee, onLogout }) {
       ['Winkel', 'Voornaam', 'Familienaam', 'Bedrijfsnaam', 'Verplicht', 'Gepresteerd', 'Afgekocht', 'Verschil'],
       uit.map((r) => [
         r.shop_name, r.first_name, r.last_name || '', r.company_name || '',
-        r.verplicht, r.gepresteerd, r.afgekocht ? 'ja' : 'nee', r.verschil,
+        r.verplicht, r.gepresteerd, r.afgekocht || 0, r.verschil,
       ]),
     )
   }
@@ -83,6 +84,9 @@ export default function BoekhoudingHome({ employee, onLogout }) {
       </div>
 
       <div className="tabs">
+        <button className={'tab' + (tab === 'planning' ? ' active' : '')} onClick={() => setTab('planning')}>
+          Planning
+        </button>
         <button className={'tab' + (tab === 'uit' ? ' active' : '')} onClick={() => setTab('uit')}>
           Uitbatingen
         </button>
@@ -100,15 +104,17 @@ export default function BoekhoudingHome({ employee, onLogout }) {
         </button>
       </div>
 
-      {loading ? (
+      {tab === 'planning' ? (
+        <AdminPlanning />
+      ) : loading ? (
         <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Laden…</div>
       ) : tab === 'uit' ? (
         <div className="card">
           <div className="section-title">Uitbatingen — {monthLabel}</div>
           <div className="hint" style={{ marginTop: 0 }}>
-            Wie heeft in welke winkel uitgebaat, en wat is het verschil met zijn verplichte aantal dagen. Een
-            negatief verschil = te weinig gepresteerd. "Afgekocht" betekent dat de ondernemer die maand voor die
-            winkel een dag heeft afgekocht.
+            Wie heeft in welke winkel uitgebaat, en wat is het verschil met zijn verplichte aantal dagen.
+            "Afgekocht" = aantal dagen die de ondernemer voor die winkel heeft afgekocht.
+            Verschil = (gepresteerd + afgekocht) − verplicht. Negatief verschil = te weinig gedekt.
           </div>
           {uit.length === 0 ? (
             <div className="muted">Geen gegevens voor deze maand.</div>
@@ -136,7 +142,7 @@ export default function BoekhoudingHome({ employee, onLogout }) {
                         </td>
                         <td style={tdR}>{r.verplicht}</td>
                         <td style={tdR}>{r.gepresteerd}</td>
-                        <td style={tdR}>{r.afgekocht ? 'ja' : ''}</td>
+                        <td style={tdR}>{r.afgekocht > 0 ? r.afgekocht : ''}</td>
                         <td style={{ ...tdR, color: r.verschil < 0 ? 'var(--danger)' : r.verschil > 0 ? 'var(--clay)' : 'inherit', fontWeight: 600 }}>
                           {r.verschil > 0 ? '+' + r.verschil : r.verschil}
                         </td>
